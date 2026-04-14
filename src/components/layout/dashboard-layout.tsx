@@ -1,5 +1,5 @@
 import { SidebarProvider, SidebarTrigger, Sidebar, SidebarHeader, SidebarContent, SidebarGroup, SidebarMenu, SidebarMenuItem, SidebarMenuButton } from "@/components/ui/sidebar"
-import { Search, Bell, LogOut } from "lucide-react"
+import { Search, Bell, LogOut, Settings } from "lucide-react"
 
 export function AppSidebar() {
   return (
@@ -48,6 +48,14 @@ export function AppSidebar() {
                 </a>
               </SidebarMenuButton>
             </SidebarMenuItem>
+            <SidebarMenuItem>
+              <SidebarMenuButton asChild tooltip="Petições" className="flex items-center gap-3 px-3 py-6 rounded-lg text-[#A3A3A3] hover:bg-[#262626] hover:text-white transition-colors group h-auto">
+                <a href="/peticoes">
+                  <span className="material-symbols-outlined text-2xl group-hover:text-[#FACC15] transition-colors">article</span>
+                  <span className="text-sm font-medium">Petições</span>
+                </a>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
           </SidebarMenu>
         </SidebarGroup>
       </SidebarContent>
@@ -93,6 +101,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               </div>
             </div>
             <div className="flex items-center gap-4">
+              <a href="/settings" className="p-2 text-[#A3A3A3] hover:text-[#FACC15] transition-colors" title="Configurações">
+                <Settings className="h-5 w-5" />
+              </a>
               <button className="relative p-2 text-[#A3A3A3] hover:text-white transition-colors">
                 <Bell className="h-5 w-5" />
                 <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-red-500 border border-[#0A0A0A]" />
