@@ -56,15 +56,24 @@ export async function uploadDocumento(params: {
 }
 
 export async function analisarDocumentos(processoId: string) {
-    const { data, error } = await supabase.functions.invoke('analisar-documentos', {
-        body: { processo_id: processoId },
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+    const { data: { session } } = await supabase.auth.getSession()
+    const token = session?.access_token ?? ''
+
+    const response = await fetch(`${supabaseUrl}/functions/v1/analisar-documentos`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({ processo_id: processoId }),
     })
 
-    if (error) {
-        // O Supabase SDK retorna uma mensagem genérica ("Edge Function returned a non-2xx status code")
-        // quando a edge function retorna status != 200. Tentar extrair a mensagem real do contexto do erro.
-        const mensagemReal = (error as any)?.context?.body?.error || error.message
-        return { resultado: null, error: { ...error, message: mensagemReal } }
+    const data = await response.json()
+
+    if (!response.ok) {
+        const msg = data?.error ?? `Erro ${response.status}`
+        return { resultado: null, error: { message: msg } as any }
     }
 
     return { resultado: data, error: null }
