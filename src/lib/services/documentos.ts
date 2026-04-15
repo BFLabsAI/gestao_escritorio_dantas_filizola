@@ -61,7 +61,10 @@ export async function analisarDocumentos(processoId: string) {
     })
 
     if (error) {
-        return { resultado: null, error }
+        // O Supabase SDK retorna uma mensagem genérica ("Edge Function returned a non-2xx status code")
+        // quando a edge function retorna status != 200. Tentar extrair a mensagem real do contexto do erro.
+        const mensagemReal = (error as any)?.context?.body?.error || error.message
+        return { resultado: null, error: { ...error, message: mensagemReal } }
     }
 
     return { resultado: data, error: null }

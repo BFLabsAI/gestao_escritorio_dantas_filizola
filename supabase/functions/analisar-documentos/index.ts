@@ -257,12 +257,15 @@ async function classificarDocumento(params: {
   })
 
   if (!response.ok) {
-    throw new Error(`Falha ao consultar OpenRouter: ${response.status}`)
+    const errorBody = await response.text()
+    console.error(`[classificarDocumento] OpenRouter erro ${response.status}:`, errorBody)
+    throw new Error(`Falha ao consultar OpenRouter: ${response.status} - ${errorBody.slice(0, 200)}`)
   }
 
   const payload = await response.json()
   const content = payload?.choices?.[0]?.message?.content
   if (typeof content !== "string") {
+    console.error("[classificarDocumento] Resposta sem conteudo:", JSON.stringify(payload).slice(0, 300))
     throw new Error("OpenRouter retornou resposta sem conteudo de classificacao")
   }
 
@@ -323,7 +326,9 @@ async function extrairDadosDocumento(params: {
   })
 
   if (!response.ok) {
-    throw new Error(`Falha ao consultar OpenRouter para extracao: ${response.status}`)
+    const errorBody = await response.text()
+    console.error(`[extrairDadosDocumento] OpenRouter erro ${response.status}:`, errorBody)
+    throw new Error(`Falha ao consultar OpenRouter para extracao: ${response.status} - ${errorBody.slice(0, 200)}`)
   }
 
   const payload = await response.json()
@@ -629,7 +634,11 @@ Deno.serve(async (req) => {
       dados_extraidos: dadosExtraidosTotal,
     })
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Erro desconhecido"
+    const message = error instanceof Error ? error.message : typeof error === "string" ? error : JSON.stringify(error)
+    console.error("[analisar-documentos] Erro na analise:", message)
+    if (error instanceof Error && error.stack) {
+      console.error("[analisar-documentos] Stack:", error.stack)
+    }
     return json({ error: message }, 500)
   }
 })
