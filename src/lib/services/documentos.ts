@@ -58,7 +58,7 @@ export async function uploadDocumento(params: {
 export async function analisarDocumentos(processoId: string) {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
     const { data: { session } } = await supabase.auth.getSession()
-    const token = session?.access_token ?? ''
+    const token = session?.access_token ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
     const response = await fetch(`${supabaseUrl}/functions/v1/analisar-documentos`, {
         method: 'POST',
