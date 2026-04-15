@@ -368,29 +368,28 @@ async function salvarDadosExtraidos(
 ) {
   if (dados.length === 0) return
 
-  // Deletar dados extraídos anteriores deste documento
-  await supabase
-    .from("dados_extraidos_gestao_escritorio_filizola")
-    .delete()
-    .eq("documento_origem_id", documentoId)
-
-  const rows = dados.map((d) => ({
-    processo_id: processoId,
-    cliente_id: clienteId,
-    documento_origem_id: documentoId,
-    tipo_documento_origem: tipoDocumento,
+  const campos = dados.map((d) => ({
     campo: d.campo,
     valor: d.valor,
     confianca: d.confianca,
-    status: d.confianca >= 0.7 ? "extraido" : "extraido",
   }))
 
-  const { error } = await supabase
-    .from("dados_extraidos_gestao_escritorio_filizola")
-    .insert(rows)
+  const { data, error } = await supabase.rpc("insert_dados_extraidos", {
+    p_processo_id: processoId,
+    p_cliente_id: clienteId,
+    p_documento_origem_id: documentoId,
+    p_tipo_documento_origem: tipoDocumento,
+    p_campos: campos,
+  })
 
   if (error) {
-    console.error("Erro ao salvar dados extraidos:", error)
+    console.error("Erro ao salvar dados extraidos via RPC:", JSON.stringify(error))
+    throw new Error(`Erro ao salvar dados extraidos: ${error.message}`)
+  }
+
+  if (data?.success === false) {
+    console.error("Erro no insert RPC:", JSON.stringify(data))
+    throw new Error(`Erro ao salvar dados extraidos: ${data.error}`)
   }
 }
 
@@ -538,8 +537,13 @@ Deno.serve(async (req) => {
             campos_extraidos: dados.length,
           })
         } catch (extracaoError) {
-          console.error(`Erro na extracao do documento ${documento.id}:`, extracaoError)
-          // Nao falhar toda a analise por erro de extracao
+          const msg = extracaoError instanceof Error ? extracaoError.message : String(extracaoError)
+          // Erro de insert no banco = problema critico, propagar
+          if (msg.startsWith("Erro ao salvar dados extraidos")) {
+            throw extracaoError
+          }
+          console.error(`Erro na extracao do documento ${documento.id}:`, msg)
+          // Nao falhar toda a analise por erro de extracao da IA
         }
       }
     }
