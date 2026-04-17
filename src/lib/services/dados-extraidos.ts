@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabase/client'
 import type { DadoExtraido, Cliente, Processo } from '@/lib/types/database'
 import { getTipoBeneficioLabel } from '@/lib/types/database'
+import { calcularIdade } from '@/lib/utils/calculo-idade'
 
 // ============================================
 // Busca de Dados Extraídos
@@ -146,6 +147,24 @@ export async function montarDadosParaPeticao(processoId: string, clienteId: stri
     if (mapaExtraidos['naturalidade']) variaveis['naturalidade'] = mapaExtraidos['naturalidade']
     if (mapaExtraidos['rg_numero']) variaveis['rg_numero'] = mapaExtraidos['rg_numero']
     if (mapaExtraidos['orgao_expedidor']) variaveis['orgao_expedidor'] = mapaExtraidos['orgao_expedidor']
+
+    // Calcular idade
+    const dataNasc = mapaExtraidos['data_nascimento']
+        || (cliente.data_nascimento ? new Date(cliente.data_nascimento).toISOString() : null)
+    if (dataNasc) {
+        const idadeInfo = calcularIdade(dataNasc)
+        if (idadeInfo) {
+            variaveis['idade'] = idadeInfo.textoPeticao
+            variaveis['idade_completa'] = idadeInfo.textoFormatado
+        }
+    }
+
+    // Sexo do cliente
+    if (cliente.sexo && cliente.sexo !== 'nao_informado') {
+        variaveis['sexo'] = cliente.sexo === 'masculino' ? 'masculino' : 'feminino'
+    }
+
+    return variaveis
 
     return variaveis
 }

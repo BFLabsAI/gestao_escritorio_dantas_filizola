@@ -2,6 +2,7 @@ import { supabase } from '@/lib/supabase/client'
 import type { ModeloPeticao, PeticaoGerada, TipoBeneficio } from '@/lib/types/database'
 import { getTipoBeneficioLabel } from '@/lib/types/database'
 import { montarDadosParaPeticao } from '@/lib/services/dados-extraidos'
+import { adaptarGenero } from '@/lib/utils/adaptar-genero'
 import { jsPDF } from 'jspdf'
 
 // ============================================
@@ -12,6 +13,8 @@ export const VARIAVEIS_DISPONIVEIS: Record<string, string> = {
     nome: 'Nome completo',
     cpf: 'CPF',
     data_nascimento: 'Data de nascimento',
+    idade: 'Idade (ex: 20 anos de idade)',
+    idade_completa: 'Idade completa (ex: 20 anos, 3 meses e 15 dias)',
     endereco: 'Endereço completo',
     telefone: 'Telefone',
     email: 'E-mail',
@@ -77,6 +80,7 @@ export async function buscarModeloPorBeneficio(tipoBeneficio: TipoBeneficio) {
 export async function salvarModeloPeticao(params: {
     tipoBeneficio: TipoBeneficio
     conteudo: string
+    variaveisCustomizadas?: string[]
 }) {
     // Desativar template anterior do mesmo tipo de benefício
     await supabase
@@ -102,6 +106,7 @@ export async function salvarModeloPeticao(params: {
                 nome_original: `Template ${params.tipoBeneficio}`,
                 nome_arquivo: `template_${params.tipoBeneficio}`,
                 ativo: true,
+                variaveis_customizadas: params.variaveisCustomizadas || [],
             })
             .eq('id', existente.id)
             .select()
@@ -131,6 +136,7 @@ export async function salvarModeloPeticao(params: {
             conteudo_template: params.conteudo,
             ativo: true,
             ordem_exibicao: ordem,
+            variaveis_customizadas: params.variaveisCustomizadas || [],
         })
         .select()
         .single()
@@ -303,7 +309,7 @@ export async function gerarPeticao(params: {
         return { peticao: null, error: new Error('Processo não encontrado') }
     }
 
-    const cliente = processo.cliente as { nome_completo?: string }
+    const cliente = processo.cliente as { nome_completo?: string; sexo?: string }
 
     // Buscar modelo - por ID ou por tipo de benefício
     let modelo: ModeloPeticao | null = null
@@ -354,8 +360,13 @@ export async function gerarPeticao(params: {
     // Montar variáveis a partir de dados extraídos + cliente + processo
     const variaveis = await montarDadosParaPeticao(params.processoId, params.clienteId)
 
+    // Adaptação de gênero ANTES da substituição de variáveis
+    const templateAdaptado = cliente.sexo && cliente.sexo !== 'nao_informado'
+        ? adaptarGenero(templateText, cliente.sexo)
+        : templateText
+
     // Substituir variáveis
-    const conteudoGerado = substituirVariaveis(templateText, variaveis)
+    const conteudoGerado = substituirVariaveis(templateAdaptado, variaveis)
 
     // Gerar PDF
     const pdfBuffer = gerarPdf(conteudoGerado, cliente?.nome_completo || 'cliente')

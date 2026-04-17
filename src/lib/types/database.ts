@@ -43,10 +43,13 @@ export interface Perfil {
     atualizado_em: string
 }
 
+export type Sexo = 'masculino' | 'feminino' | 'nao_informado'
+
 export interface Cliente {
     id: string
     nome_completo: string
     cpf: string
+    sexo: Sexo
     data_nascimento: string | null
     telefone: string | null
     email: string | null
@@ -133,6 +136,7 @@ export interface ModeloPeticao {
     conteudo_template: string | null
     ativo: boolean
     ordem_exibicao: number
+    variaveis_customizadas: string[] | null
     criado_em: string
 }
 

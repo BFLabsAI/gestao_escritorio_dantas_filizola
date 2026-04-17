@@ -52,7 +52,10 @@ import {
     Check,
     X,
     Database,
+    ChevronDown,
+    ChevronUp,
 } from "lucide-react"
+import ComentariosProcesso from "@/components/comentarios-processo"
 
 type DocumentoComPreview = Documento & {
     previewUrl?: string | null
@@ -68,6 +71,56 @@ type ChecklistItem = {
 // Mapeamento: tipo de documento exigido -> campos extraídos que satisfazem a exigência
 const CAMPO_SATISFAZ_EXIGENCIA: Record<string, string[]> = {
     CPF: ["cpf"],
+}
+
+function CollapsibleSection({
+    title,
+    icon,
+    defaultOpen = true,
+    children,
+    badge,
+    headerRight,
+}: {
+    title: string
+    icon?: React.ReactNode
+    defaultOpen?: boolean
+    children: React.ReactNode
+    badge?: string
+    headerRight?: React.ReactNode
+}) {
+    const [isOpen, setIsOpen] = useState(defaultOpen)
+
+    return (
+        <div className="rounded-xl border border-[#333333] bg-[#171717] overflow-hidden">
+            <button
+                onClick={() => setIsOpen(!isOpen)}
+                className="w-full flex items-center justify-between p-5 hover:bg-[#1F1F1F]/50 transition-colors"
+            >
+                <div className="flex items-center gap-3">
+                    {icon}
+                    <h2 className="text-sm font-bold uppercase tracking-wider text-[#A3A3A3]">
+                        {title}
+                    </h2>
+                    {badge && (
+                        <span className="text-xs text-[#A3A3A3]">{badge}</span>
+                    )}
+                </div>
+                <div className="flex items-center gap-2">
+                    {headerRight}
+                    {isOpen ? (
+                        <ChevronUp className="h-4 w-4 text-[#A3A3A3]" />
+                    ) : (
+                        <ChevronDown className="h-4 w-4 text-[#A3A3A3]" />
+                    )}
+                </div>
+            </button>
+            {isOpen && (
+                <div className="px-5 pb-5 border-t border-[#333333]">
+                    {children}
+                </div>
+            )}
+        </div>
+    )
 }
 
 function getChecklistFromData(
@@ -527,19 +580,14 @@ export default function ProcessoAuditPage({ params }: { params: Promise<{ id: st
 
                 <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
                     <div className="space-y-6">
-                        <div className="rounded-xl border border-[#333333] bg-[#171717] p-6">
-                            <div className="mb-4 flex items-center justify-between">
-                                <h2 className="text-sm font-bold uppercase tracking-wider text-[#A3A3A3]">
-                                    Checklist de conformidade
-                                </h2>
-                                <span className="text-xs text-[#A3A3A3]">
-                                    {faltantesObrigatorios.length === 0
-                                        ? "Sem pendências obrigatórias"
-                                        : `${faltantesObrigatorios.length} pendência(s) obrigatória(s)`}
-                                </span>
-                            </div>
-
-                            <div className="space-y-3">
+                        {/* Checklist de Conformidade */}
+                        <CollapsibleSection
+                            title="Checklist de conformidade"
+                            icon={<CheckCircle2 className="h-4 w-4 text-[#FACC15]" />}
+                            badge={faltantesObrigatorios.length === 0 ? "Sem pendencias obrigatorias" : `${faltantesObrigatorios.length} pendencia(s) obrigatoria(s)`}
+                            defaultOpen={true}
+                        >
+                            <div className="pt-4 space-y-3">
                                 {checklist.length === 0 ? (
                                     <p className="text-sm text-[#A3A3A3]">Nenhuma exigência configurada para este benefício.</p>
                                 ) : (
@@ -576,13 +624,14 @@ export default function ProcessoAuditPage({ params }: { params: Promise<{ id: st
                                     ))
                                 )}
                             </div>
-                        </div>
+                        </CollapsibleSection>
 
-                        <div className="rounded-xl border border-[#333333] bg-[#171717] p-6">
-                            <h2 className="mb-4 text-sm font-bold uppercase tracking-wider text-[#A3A3A3]">
-                                Metadados da configuração
-                            </h2>
-                            <div className="grid gap-3 md:grid-cols-2">
+                        {/* Metadados da Configuração */}
+                        <CollapsibleSection
+                            title="Metadados da configuração"
+                            defaultOpen={false}
+                        >
+                            <div className="pt-4 grid gap-3 md:grid-cols-2">
                                 {exigencias.map((item) => (
                                     <div key={item.id} className="rounded-lg border border-[#333333] bg-[#0A0A0A] p-4">
                                         <p className="text-sm font-semibold text-white">{getTipoDocumentoLabel(item.tipo_documento)}</p>
@@ -590,26 +639,17 @@ export default function ProcessoAuditPage({ params }: { params: Promise<{ id: st
                                     </div>
                                 ))}
                             </div>
-                        </div>
+                        </CollapsibleSection>
 
-                        {/* Seção: Dados Extraídos */}
-                        <div className="rounded-xl border border-[#333333] bg-[#171717] p-6">
-                            <div className="flex items-center justify-between mb-4">
-                                <div className="flex items-center gap-3">
-                                    <div className="h-8 w-8 rounded-lg bg-cyan-500/10 flex items-center justify-center">
-                                        <Database className="text-cyan-400 h-4 w-4" />
-                                    </div>
-                                    <h2 className="text-sm font-bold uppercase tracking-wider text-[#A3A3A3]">
-                                        Dados Extraídos pela IA
-                                    </h2>
-                                </div>
-                                <span className="text-xs text-[#A3A3A3]">
-                                    {dadosAgrupados.length} campo(s)
-                                </span>
-                            </div>
-
+                        {/* Dados Extraídos pela IA */}
+                        <CollapsibleSection
+                            title="Dados Extraídos pela IA"
+                            icon={<div className="h-6 w-6 rounded bg-cyan-500/10 flex items-center justify-center"><Database className="text-cyan-400 h-3.5 w-3.5" /></div>}
+                            badge={`${dadosAgrupados.length} campo(s)`}
+                            defaultOpen={true}
+                        >
                             {dadosAgrupados.length === 0 ? (
-                                <div className="rounded-lg border border-dashed border-[#333333] bg-[#0A0A0A] p-6 text-center">
+                                <div className="pt-4 rounded-lg border border-dashed border-[#333333] bg-[#0A0A0A] p-6 text-center">
                                     <Database className="mx-auto mb-2 h-6 w-6 text-[#525252]" />
                                     <p className="text-sm text-[#525252]">
                                         Nenhum dado extraído ainda.
@@ -619,7 +659,7 @@ export default function ProcessoAuditPage({ params }: { params: Promise<{ id: st
                                     </p>
                                 </div>
                             ) : (
-                                <div className="space-y-2">
+                                <div className="pt-4 space-y-2">
                                     {dadosAgrupados.map((dado) => (
                                         <div
                                             key={dado.id}
@@ -699,18 +739,16 @@ export default function ProcessoAuditPage({ params }: { params: Promise<{ id: st
                                     ))}
                                 </div>
                             )}
-                        </div>
+                        </CollapsibleSection>
                     </div>
 
-                    <div className="rounded-xl border border-[#333333] bg-[#171717] p-6">
-                        <div className="mb-4 flex items-center justify-between">
-                            <h2 className="text-sm font-bold uppercase tracking-wider text-[#A3A3A3]">
-                                Documentos enviados
-                            </h2>
-                            <span className="text-xs text-[#A3A3A3]">{documentos.length} arquivo(s)</span>
-                        </div>
-
-                        <div className="space-y-4">
+                    {/* Documentos Enviados */}
+                    <CollapsibleSection
+                        title="Documentos enviados"
+                        badge={`${documentos.length} arquivo(s)`}
+                        defaultOpen={true}
+                    >
+                        <div className="pt-4 space-y-4">
                             {documentos.length === 0 ? (
                                 <div className="rounded-xl border border-dashed border-[#333333] bg-[#0A0A0A] p-10 text-center">
                                     <UploadCloud className="mx-auto mb-3 h-8 w-8 text-[#FACC15]" />
@@ -774,7 +812,18 @@ export default function ProcessoAuditPage({ params }: { params: Promise<{ id: st
                                 ))
                             )}
                         </div>
-                    </div>
+                    </CollapsibleSection>
+
+                    {/* Chat */}
+                    <CollapsibleSection
+                        title="Chat"
+                        icon={<span className="material-symbols-outlined text-[#FACC15] text-sm">chat</span>}
+                        defaultOpen={true}
+                    >
+                        <div className="pt-4">
+                            <ComentariosProcesso processoId={resolvedParams.id} />
+                        </div>
+                    </CollapsibleSection>
                 </div>
 
                 {/* Seção de Petições */}

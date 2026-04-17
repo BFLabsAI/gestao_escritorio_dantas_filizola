@@ -1,22 +1,26 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import { useRouter } from "next/navigation"
 import DashboardLayout from "@/components/layout/dashboard-layout"
 import Link from "next/link"
-import { Search, Filter, Plus, Eye, Edit, FileText, Clock, X, Loader2, Trash2 } from "lucide-react"
+import { Search, Filter, Plus, Eye, Edit, FileText, Clock, X, Loader2, Trash2, UserPlus, Users } from "lucide-react"
 import { buscarProcessos, deletarProcesso } from "@/lib/services/processos"
 import type { Processo } from "@/lib/types/database"
 import { FASE_KANBAN_LABELS, FASE_KANBAN_COLORS, getTipoBeneficioLabel } from "@/lib/types/database"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 
 const FASES_DISPONIVEIS = Object.entries(FASE_KANBAN_LABELS).map(([value, label]) => ({ value, label }))
 
 export default function ProcessosPage() {
+    const router = useRouter()
     const [processos, setProcessos] = useState<Processo[]>([])
     const [carregando, setCarregando] = useState(true)
     const [busca, setBusca] = useState("")
     const [filtrosAtivos, setFiltrosAtivos] = useState<string[]>([])
     const [showFiltros, setShowFiltros] = useState(false)
     const [deletandoId, setDeletandoId] = useState<string | null>(null)
+    const [novoProcessoModalOpen, setNovoProcessoModalOpen] = useState(false)
 
     const carregarProcessos = async () => {
         setCarregando(true)
@@ -140,13 +144,13 @@ export default function ProcessosPage() {
                                 </div>
                             )}
                         </div>
-                        <Link
-                            href="/novo-processo"
+                        <button
+                            onClick={() => setNovoProcessoModalOpen(true)}
                             className="flex items-center justify-center gap-2 rounded-lg bg-[#FACC15] hover:bg-[#EAB308] transition-colors px-6 py-2.5 text-black font-bold text-sm shadow-[0_0_15px_rgba(250,204,21,0.15)]"
                         >
                             <Plus className="h-4 w-4" />
                             Novo Processo
-                        </Link>
+                        </button>
                     </div>
                 </div>
 
@@ -311,6 +315,48 @@ export default function ProcessosPage() {
                     </div>
                 </div>
             </div>
+
+            {/* Modal Novo Processo */}
+            <Dialog open={novoProcessoModalOpen} onOpenChange={setNovoProcessoModalOpen}>
+                <DialogContent className="bg-[#171717] border-[#333333] text-white sm:max-w-md">
+                    <DialogHeader>
+                        <DialogTitle className="text-xl font-black text-white">Criar Novo Processo</DialogTitle>
+                        <DialogDescription className="text-[#A3A3A3]">Selecione como deseja prosseguir.</DialogDescription>
+                    </DialogHeader>
+                    <div className="flex flex-col gap-3 mt-4">
+                        <button
+                            onClick={() => {
+                                setNovoProcessoModalOpen(false)
+                                router.push('/novo-processo?modo=novo-cliente')
+                            }}
+                            className="flex items-center gap-3 p-4 rounded-xl bg-[#0A0A0A] border border-[#333333] hover:border-[#FACC15]/30 hover:bg-[#FACC15]/5 transition-all group"
+                        >
+                            <div className="h-10 w-10 rounded-lg bg-[#FACC15]/10 flex items-center justify-center shrink-0">
+                                <UserPlus className="h-5 w-5 text-[#FACC15]" />
+                            </div>
+                            <div className="text-left">
+                                <p className="text-sm font-bold text-white group-hover:text-[#FACC15] transition-colors">Cliente Novo</p>
+                                <p className="text-xs text-[#A3A3A3]">Cadastrar um novo cliente e criar o processo</p>
+                            </div>
+                        </button>
+                        <button
+                            onClick={() => {
+                                setNovoProcessoModalOpen(false)
+                                router.push('/novo-processo?modo=cliente-existente')
+                            }}
+                            className="flex items-center gap-3 p-4 rounded-xl bg-[#0A0A0A] border border-[#333333] hover:border-[#FACC15]/30 hover:bg-[#FACC15]/5 transition-all group"
+                        >
+                            <div className="h-10 w-10 rounded-lg bg-[#FACC15]/10 flex items-center justify-center shrink-0">
+                                <Users className="h-5 w-5 text-[#FACC15]" />
+                            </div>
+                            <div className="text-left">
+                                <p className="text-sm font-bold text-white group-hover:text-[#FACC15] transition-colors">Cliente Existente</p>
+                                <p className="text-xs text-[#A3A3A3]">Buscar e selecionar um cliente ja cadastrado</p>
+                            </div>
+                        </button>
+                    </div>
+                </DialogContent>
+            </Dialog>
         </DashboardLayout>
     )
 }

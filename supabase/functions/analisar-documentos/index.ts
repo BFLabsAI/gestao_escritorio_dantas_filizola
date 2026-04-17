@@ -548,6 +548,75 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Extrair variaveis customizadas do template ativo para este tipo de beneficio
+    try {
+      const { data: modeloAtivo } = await supabase
+        .from("modelos_dantas_filizola")
+        .select("variaveis_customizadas")
+        .eq("categoria", "peticoes")
+        .eq("tipo_beneficio", tipoBeneficio)
+        .eq("ativo", true)
+        .maybeSingle()
+
+      const variaveisCustom = (modeloAtivo?.variaveis_customizadas as string[]) ?? []
+      if (variaveisCustom.length > 0 && clienteId) {
+        // Buscar campos ja extraidos para nao duplicar
+        const { data: camposJaExtraidos } = await supabase
+          .from("dados_extraidos_gestao_escritorio_filizola")
+          .select("campo")
+          .eq("processo_id", processo_id)
+
+        const camposExistentes = new Set(
+          (camposJaExtraidos ?? []).map((d: { campo: string }) => d.campo),
+        )
+
+        const variaveisParaExtrair = variaveisCustom.filter(
+          (v: string) => !camposExistentes.has(v),
+        )
+
+        if (variaveisParaExtrair.length > 0) {
+          // Buscar um documento legivel para extrair as variaveis customizadas
+          const docLegivel = resultados.find(
+            (r: { qualidade_documento: string }) => r.qualidade_documento === "LEGIVEL",
+          )
+          if (docLegivel) {
+            const docRow = (documentos as DocumentoRow[]).find(
+              (d: DocumentoRow) => d.id === docLegivel.documento_id,
+            )
+            if (docRow) {
+              const { data: fileData } = await supabase.storage
+                .from("documentos_processuais")
+                .download(docRow.storage_path)
+              if (fileData) {
+                const base64 = await arrayBufferToBase64(fileData)
+                const mimetype = docRow.mimetype ?? "application/octet-stream"
+                const { dados: dadosCustom, confiancaGeral: confCustom } =
+                  await extrairDadosDocumento({
+                    base64,
+                    mimetype,
+                    tipoDocumento: "DOCUMENTO_GENERICO",
+                    campos: variaveisParaExtrair,
+                  })
+                if (dadosCustom.length > 0 && confCustom >= 0.5) {
+                  await salvarDadosExtraidos(
+                    supabase,
+                    processo_id,
+                    clienteId,
+                    docRow.id,
+                    "DOCUMENTO_GENERICO",
+                    dadosCustom,
+                  )
+                }
+              }
+            }
+          }
+        }
+      }
+    } catch (customVarError) {
+      console.error("Erro ao extrair variaveis customizadas:", customVarError)
+      // Nao falhar toda a analise por erro de variaveis customizadas
+    }
+
     // Recalcular checklist apos possiveis mudancas de qualidade
     const documentosLegiveis = new Set(
       resultados

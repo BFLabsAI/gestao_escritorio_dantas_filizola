@@ -3,16 +3,65 @@
 import { use, useState, useEffect } from "react"
 import DashboardLayout from "@/components/layout/dashboard-layout"
 import Link from "next/link"
-import { ArrowLeft, Phone, Mail, MapPin, Calendar, FileText, Clock, Edit, Trash2, Loader2, Download, Sparkles } from "lucide-react"
+import { ArrowLeft, Phone, Mail, MapPin, Calendar, FileText, Clock, Edit, Trash2, Loader2, Download, Sparkles, ChevronDown, ChevronUp } from "lucide-react"
 import { buscarClientePorId, deletarCliente } from "@/lib/services/clientes"
 import { buscarProcessosPorCliente } from "@/lib/services/processos"
 import { buscarDocumentosPorProcesso } from "@/lib/services/documentos"
 import { buscarPeticoesPorCliente, getUrlPeticaoGerada } from "@/lib/services/peticoes"
 import type { Cliente, Processo, Documento, PeticaoGerada } from "@/lib/types/database"
 import { FASE_KANBAN_LABELS, FASE_KANBAN_COLORS, getTipoBeneficioLabel, getTipoDocumentoLabel } from "@/lib/types/database"
+import { calcularIdade } from "@/lib/utils/calculo-idade"
+import ComentariosCliente from "@/components/comentarios-cliente"
 
 interface DocumentoComProcesso extends Documento {
     processo_id: string
+}
+
+function CollapsibleSection({
+    title,
+    icon,
+    defaultOpen = true,
+    children,
+    badge,
+}: {
+    title: string
+    icon: React.ReactNode
+    defaultOpen?: boolean
+    children: React.ReactNode
+    badge?: string
+}) {
+    const [isOpen, setIsOpen] = useState(defaultOpen)
+
+    return (
+        <div className="bg-[#171717] border border-[#333333] rounded-xl overflow-hidden">
+            <button
+                onClick={() => setIsOpen(!isOpen)}
+                className="w-full flex items-center justify-between p-5 hover:bg-[#1F1F1F]/50 transition-colors"
+            >
+                <div className="flex items-center gap-3">
+                    <div className="h-8 w-8 rounded-lg bg-[#FACC15]/10 flex items-center justify-center">
+                        {icon}
+                    </div>
+                    <h2 className="text-sm font-bold text-white">{title}</h2>
+                    {badge && (
+                        <span className="px-2 py-0.5 rounded-full bg-[#FACC15]/10 text-[#FACC15] text-[10px] font-bold border border-[#FACC15]/20">
+                            {badge}
+                        </span>
+                    )}
+                </div>
+                {isOpen ? (
+                    <ChevronUp className="h-4 w-4 text-[#A3A3A3]" />
+                ) : (
+                    <ChevronDown className="h-4 w-4 text-[#A3A3A3]" />
+                )}
+            </button>
+            {isOpen && (
+                <div className="px-5 pb-5 border-t border-[#333333]">
+                    {children}
+                </div>
+            )}
+        </div>
+    )
 }
 
 export default function ClienteDetalhePage({ params }: { params: Promise<{ id: string }> }) {
@@ -42,7 +91,6 @@ export default function ClienteDetalhePage({ params }: { params: Promise<{ id: s
                 if (!processosErro && processosData) {
                     setProcessos(processosData)
 
-                    // Buscar documentos para cada processo
                     const todosDocumentos: DocumentoComProcesso[] = []
                     for (const processo of processosData) {
                         const { documentos: docsData } = await buscarDocumentosPorProcesso(processo.id)
@@ -53,7 +101,6 @@ export default function ClienteDetalhePage({ params }: { params: Promise<{ id: s
                     setDocumentos(todosDocumentos)
                 }
 
-                // Buscar petições do cliente
                 const { peticoes: peticoesData } = await buscarPeticoesPorCliente(id)
                 if (peticoesData) {
                     setPeticoes(peticoesData)
@@ -181,16 +228,16 @@ export default function ClienteDetalhePage({ params }: { params: Promise<{ id: s
                 </div>
 
                 <div className="grid gap-6 lg:grid-cols-3">
-                    {/* Dados Pessoais */}
+                    {/* Coluna principal */}
                     <div className="lg:col-span-2 space-y-6">
-                        {/* Informacoes de Contato */}
-                        <div className="bg-[#171717] border border-[#333333] rounded-xl p-6">
-                            <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-                                <span className="material-symbols-outlined text-[#FACC15]">person</span>
-                                Dados Pessoais
-                            </h2>
-
-                            <div className="grid gap-4 md:grid-cols-2">
+                        {/* Dados Pessoais */}
+                        <CollapsibleSection
+                            title="Dados Pessoais"
+                            badge={cliente.sexo === 'masculino' ? 'Masc.' : cliente.sexo === 'feminino' ? 'Fem.' : undefined}
+                            icon={<span className="material-symbols-outlined text-[#FACC15] text-sm">person</span>}
+                            defaultOpen={true}
+                        >
+                            <div className="pt-4 grid gap-4 md:grid-cols-2">
                                 <div className="space-y-4">
                                     <div className="flex items-start gap-3">
                                         <Phone className="h-5 w-5 text-[#A3A3A3] mt-0.5" />
@@ -218,13 +265,23 @@ export default function ClienteDetalhePage({ params }: { params: Promise<{ id: s
                                                     ? new Date(cliente.data_nascimento).toLocaleDateString("pt-BR")
                                                     : "—"}
                                             </p>
+                                            {cliente.data_nascimento && (() => {
+                                                const idade = calcularIdade(cliente.data_nascimento)
+                                                return idade ? (
+                                                    <p className="text-xs text-[#FACC15] font-medium mt-0.5">
+                                                        {idade.textoFormatado}
+                                                    </p>
+                                                ) : null
+                                            })()}
                                         </div>
                                     </div>
                                     <div className="flex items-start gap-3">
                                         <FileText className="h-5 w-5 text-[#A3A3A3] mt-0.5" />
                                         <div>
-                                            <p className="text-xs text-[#A3A3A3] uppercase tracking-wider">RG</p>
-                                            <p className="text-white font-medium">—</p>
+                                            <p className="text-xs text-[#A3A3A3] uppercase tracking-wider">Sexo</p>
+                                            <p className="text-white font-medium">
+                                                {cliente.sexo === 'masculino' ? 'Masculino' : cliente.sexo === 'feminino' ? 'Feminino' : 'Nao informado'}
+                                            </p>
                                         </div>
                                     </div>
                                     <div className="flex items-start gap-3">
@@ -238,46 +295,47 @@ export default function ClienteDetalhePage({ params }: { params: Promise<{ id: s
                                     </div>
                                 </div>
                             </div>
-                        </div>
+                        </CollapsibleSection>
 
-                        {/* Endereco */}
-                        <div className="bg-[#171717] border border-[#333333] rounded-xl p-6">
-                            <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-                                <span className="material-symbols-outlined text-[#FACC15]">location_on</span>
-                                Endereco
-                            </h2>
-
-                            {cliente.endereco ? (
-                                <div className="flex items-start gap-3">
-                                    <MapPin className="h-5 w-5 text-[#A3A3A3] mt-0.5" />
-                                    <div>
-                                        <p className="text-white font-medium">{enderecoCompleto || "—"}</p>
-                                        <p className="text-[#A3A3A3]">{bairroCidadeUf || "—"}</p>
-                                        {cliente.endereco.cep && (
-                                            <p className="text-[#A3A3A3]">CEP: {cliente.endereco.cep}</p>
-                                        )}
+                        {/* Endereço */}
+                        <CollapsibleSection
+                            title="Endereço"
+                            icon={<span className="material-symbols-outlined text-[#FACC15] text-sm">location_on</span>}
+                            defaultOpen={false}
+                        >
+                            <div className="pt-4">
+                                {cliente.endereco ? (
+                                    <div className="flex items-start gap-3">
+                                        <MapPin className="h-5 w-5 text-[#A3A3A3] mt-0.5" />
+                                        <div>
+                                            <p className="text-white font-medium">{enderecoCompleto || "—"}</p>
+                                            <p className="text-[#A3A3A3]">{bairroCidadeUf || "—"}</p>
+                                            {cliente.endereco.cep && (
+                                                <p className="text-[#A3A3A3]">CEP: {cliente.endereco.cep}</p>
+                                            )}
+                                        </div>
                                     </div>
-                                </div>
-                            ) : (
-                                <div className="flex items-start gap-3">
-                                    <MapPin className="h-5 w-5 text-[#A3A3A3] mt-0.5" />
-                                    <div>
-                                        <p className="text-[#A3A3A3]">Endereco nao cadastrado</p>
+                                ) : (
+                                    <div className="flex items-start gap-3">
+                                        <MapPin className="h-5 w-5 text-[#A3A3A3] mt-0.5" />
+                                        <div>
+                                            <p className="text-[#A3A3A3]">Endereco nao cadastrado</p>
+                                        </div>
                                     </div>
-                                </div>
-                            )}
-                        </div>
+                                )}
+                            </div>
+                        </CollapsibleSection>
 
                         {/* Processos */}
-                        <div className="bg-[#171717] border border-[#333333] rounded-xl p-6">
-                            <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-                                <span className="material-symbols-outlined text-[#FACC15]">balance</span>
-                                Processos ({processos.length})
-                            </h2>
-
-                            <div className="space-y-4">
+                        <CollapsibleSection
+                            title="Processos"
+                            badge={String(processos.length)}
+                            icon={<span className="material-symbols-outlined text-[#FACC15] text-sm">balance</span>}
+                            defaultOpen={true}
+                        >
+                            <div className="pt-4 space-y-3">
                                 {processos.length === 0 ? (
-                                    <p className="text-[#A3A3A3] text-sm py-4">Nenhum processo encontrado.</p>
+                                    <p className="text-[#A3A3A3] text-sm py-2">Nenhum processo encontrado.</p>
                                 ) : (
                                     processos.map((processo) => (
                                         <Link
@@ -315,6 +373,14 @@ export default function ClienteDetalhePage({ params }: { params: Promise<{ id: s
                                     ))
                                 )}
                             </div>
+                        </CollapsibleSection>
+
+                        {/* Comentários */}
+                        <div className="bg-[#171717] border border-[#333333] rounded-xl p-5">
+                            <h2 className="text-sm font-bold text-[#A3A3A3] uppercase tracking-wider mb-4">
+                                Comentários
+                            </h2>
+                            <ComentariosCliente clienteId={resolvedParams.id} />
                         </div>
                     </div>
 
@@ -330,12 +396,13 @@ export default function ClienteDetalhePage({ params }: { params: Promise<{ id: s
                         </div>
 
                         {/* Documentos */}
-                        <div className="bg-[#171717] border border-[#333333] rounded-xl p-6">
-                            <h3 className="text-sm font-bold text-[#A3A3A3] uppercase tracking-wider mb-4">
-                                Documentos ({documentos.length})
-                            </h3>
-
-                            <div className="space-y-3">
+                        <CollapsibleSection
+                            title="Documentos"
+                            badge={String(documentos.length)}
+                            icon={<span className="material-symbols-outlined text-[#FACC15] text-sm">folder</span>}
+                            defaultOpen={true}
+                        >
+                            <div className="pt-4 space-y-3">
                                 {documentos.length === 0 ? (
                                     <p className="text-[#A3A3A3] text-sm py-2">Nenhum documento encontrado.</p>
                                 ) : (
@@ -379,23 +446,29 @@ export default function ClienteDetalhePage({ params }: { params: Promise<{ id: s
                                     })
                                 )}
                             </div>
-                        </div>
+                        </CollapsibleSection>
 
-                        {/* Observacoes */}
-                        <div className="bg-[#171717] border border-[#333333] rounded-xl p-6">
-                            <h3 className="text-sm font-bold text-[#A3A3A3] uppercase tracking-wider mb-3">Observacoes</h3>
-                            <p className="text-sm text-[#A3A3A3] leading-relaxed italic">
-                                Nenhuma observacao registrada.
-                            </p>
-                        </div>
+                        {/* Observações */}
+                        <CollapsibleSection
+                            title="Observações"
+                            icon={<span className="material-symbols-outlined text-[#FACC15] text-sm">sticky_note_2</span>}
+                            defaultOpen={false}
+                        >
+                            <div className="pt-4">
+                                <p className="text-sm text-[#A3A3A3] leading-relaxed italic">
+                                    Nenhuma observacao registrada.
+                                </p>
+                            </div>
+                        </CollapsibleSection>
 
                         {/* Petições */}
-                        <div className="bg-[#171717] border border-[#333333] rounded-xl p-6">
-                            <h3 className="text-sm font-bold text-[#A3A3A3] uppercase tracking-wider mb-4">
-                                Petições ({peticoes.length})
-                            </h3>
-
-                            <div className="space-y-3">
+                        <CollapsibleSection
+                            title="Petições"
+                            badge={String(peticoes.length)}
+                            icon={<Sparkles className="h-4 w-4 text-[#FACC15]" />}
+                            defaultOpen={true}
+                        >
+                            <div className="pt-4 space-y-3">
                                 {peticoes.length === 0 ? (
                                     <p className="text-[#A3A3A3] text-sm py-2">Nenhuma petição gerada.</p>
                                 ) : (
@@ -445,7 +518,7 @@ export default function ClienteDetalhePage({ params }: { params: Promise<{ id: s
                                     ))
                                 )}
                             </div>
-                        </div>
+                        </CollapsibleSection>
                     </div>
                 </div>
             </div>

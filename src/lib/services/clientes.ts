@@ -28,6 +28,7 @@ export async function buscarClientePorId(id: string) {
 export async function criarCliente(cliente: {
     nome_completo: string
     cpf: string
+    sexo?: string
     telefone?: string
     email?: string
     data_nascimento?: string
