@@ -39,8 +39,8 @@ function sanitizePhone(phone: string) {
 function buildMessage(processo: ProcessoCritico) {
   const nome = processo.cliente?.nome_completo ?? "cliente"
   const identificador = processo.numero_processo
-    ? `Processo ${processo.numero_processo}`
-    : `Processo ${processo.id}`
+    ? `${nome} - Processo ${processo.numero_processo}`
+    : `${nome} - Processo ${processo.id}`
 
   const phaseMessage: Record<FaseCritica, string> = {
     DOC_PENDENTE:
@@ -52,8 +52,8 @@ function buildMessage(processo: ProcessoCritico) {
   }
 
   return [
-    `Olá, ${nome}.`,
-    `${identificador}: ${phaseMessage[processo.fase_kanban]}`,
+    `Ola pessoal,`,
+    `Processo (${identificador}): ${phaseMessage[processo.fase_kanban]}`,
     `Fase atual: ${processo.fase_kanban}.`,
     `Tempo na fase: ${processo.dias_na_fase} dia(s).`,
     "Equipe Dantas & Filizola.",
@@ -69,7 +69,11 @@ async function sendWhatsappMessage(phone: string, text: string) {
   const authScheme = Deno.env.get("UAZAPI_AUTH_SCHEME") ?? "Bearer"
 
   const headers = new Headers({ "Content-Type": "application/json" })
-  headers.set(authHeader, authHeader.toLowerCase() === "authorization" ? `${authScheme} ${token}` : token)
+  if (authScheme) {
+    headers.set(authHeader, `${authScheme} ${token}`)
+  } else {
+    headers.set(authHeader, token)
+  }
 
   const body: Record<string, unknown> = {
     number: sanitizePhone(phone),
@@ -112,7 +116,7 @@ Deno.serve(async (req) => {
     const authorization = req.headers.get("Authorization")
 
     if (authorization !== `Bearer ${expectedSecret}`) {
-      return json({ error: "Nao autorizado" }, 401)
+      return json({ error: "Nao autorizado", detalhe: "CRON_SECRET invalido ou ausente no header Authorization" }, 401)
     }
 
     const supabase = createClient(

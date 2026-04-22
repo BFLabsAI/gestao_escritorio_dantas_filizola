@@ -19,7 +19,7 @@ export default function ClientesPage() {
     const [carregando, setCarregando] = useState(true)
     const [dialogOpen, setDialogOpen] = useState(false)
     const [isSuccess, setIsSuccess] = useState(false)
-    const [form, setForm] = useState({ nome: "", cpf: "", telefone: "", email: "" })
+    const [form, setForm] = useState({ nome: "", cpf: "", telefone: "", email: "", sexo: "nao_informado" })
     const [errors, setErrors] = useState<Record<string, string>>({})
     const [busca, setBusca] = useState("")
     const [filtrosAtivos, setFiltrosAtivos] = useState<string[]>([])
@@ -76,9 +76,10 @@ export default function ClientesPage() {
                 cpf: form.cpf,
                 telefone: form.telefone,
                 email: form.email,
+                sexo: form.sexo,
             })
 
-            setForm({ nome: "", cpf: "", telefone: "", email: "" })
+            setForm({ nome: "", cpf: "", telefone: "", email: "", sexo: "nao_informado" })
             setErrors({})
             setDialogOpen(false)
             setIsSuccess(true)
@@ -282,8 +283,8 @@ export default function ClientesPage() {
                                             <p className="text-xs text-[#A3A3A3] font-mono">{cliente.cpf}</p>
                                         </div>
                                     </div>
-                                    <span className="px-2 py-1 rounded text-[10px] font-bold uppercase border bg-green-500/10 text-green-400 border-green-500/20">
-                                        Ativo
+                                    <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase border ${cliente.ativo ? 'bg-green-500/10 text-green-400 border-green-500/20' : 'bg-red-500/10 text-red-400 border-red-500/20'}`}>
+                                        {cliente.ativo ? 'Ativo' : 'Inativo'}
                                     </span>
                                 </div>
 
@@ -382,11 +383,24 @@ export default function ClientesPage() {
                                 className="w-full h-11 rounded-lg bg-[#1F1F1F] border border-[#333333] px-4 text-sm outline-none focus:border-[#FACC15] focus:ring-1 focus:ring-[#FACC15] transition-all text-white placeholder:text-[#525252]"
                             />
                         </div>
+
+                        <div>
+                            <label className="text-[10px] font-black uppercase text-[#A3A3A3] tracking-widest block mb-1.5">Sexo</label>
+                            <select
+                                value={form.sexo}
+                                onChange={(e) => setForm({ ...form, sexo: e.target.value })}
+                                className="w-full h-11 rounded-lg bg-[#1F1F1F] border border-[#333333] px-4 text-sm outline-none focus:border-[#FACC15] focus:ring-1 focus:ring-[#FACC15] transition-all text-white appearance-none cursor-pointer"
+                            >
+                                <option value="nao_informado">Nao informado</option>
+                                <option value="masculino">Masculino</option>
+                                <option value="feminino">Feminino</option>
+                            </select>
+                        </div>
                     </div>
 
                     <div className="flex justify-end gap-3 mt-6">
                         <button
-                            onClick={() => { setDialogOpen(false); setForm({ nome: "", cpf: "", telefone: "", email: "" }); setErrors({}) }}
+                            onClick={() => { setDialogOpen(false); setForm({ nome: "", cpf: "", telefone: "", email: "", sexo: "nao_informado" }); setErrors({}) }}
                             className="px-6 py-2.5 rounded-lg bg-[#1F1F1F] border border-[#333333] text-sm font-medium text-[#A3A3A3] hover:text-white hover:border-[#FACC15]/50 transition-colors"
                         >
                             Cancelar

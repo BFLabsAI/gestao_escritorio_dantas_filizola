@@ -1,57 +1,90 @@
 import { supabase } from '@/lib/supabase/client'
-import type { DadoExtraido, Cliente, Processo } from '@/lib/types/database'
+import type { Cliente, DadoExtraidoJsonb, DadosExtraidosProcesso } from '@/lib/types/database'
 import { getTipoBeneficioLabel } from '@/lib/types/database'
 import { calcularIdade } from '@/lib/utils/calculo-idade'
 
 // ============================================
-// Busca de Dados Extraídos
+// Busca de Dados Extraídos (JSONB)
 // ============================================
 
 export async function buscarDadosExtraidosPorProcesso(processoId: string) {
     const { data, error } = await supabase
         .from('dados_extraidos_gestao_escritorio_filizola')
-        .select('*')
+        .select('dados')
         .eq('processo_id', processoId)
-        .order('campo', { ascending: true })
+        .maybeSingle()
 
-    return { dados: data as DadoExtraido[], error }
-}
-
-export async function buscarDadosExtraidosPorCliente(clienteId: string) {
-    const { data, error } = await supabase
-        .from('dados_extraidos_gestao_escritorio_filizola')
-        .select('*')
-        .eq('cliente_id', clienteId)
-        .order('criado_em', { ascending: false })
-
-    return { dados: data as DadoExtraido[], error }
+    return {
+        dados: (data?.dados as DadosExtraidosProcesso) || {},
+        error: error as Error | null,
+    }
 }
 
 // ============================================
-// Atualização e Exclusão
+// Atualização de Campos Individuais (JSONB)
 // ============================================
 
-export async function atualizarDadoExtraido(id: string, valor: string) {
-    const { data, error } = await supabase
+export async function atualizarDadoExtraido(processoId: string, campo: string, valor: string) {
+    // Buscar dados atuais para preservar metadados
+    const { data: current } = await supabase
         .from('dados_extraidos_gestao_escritorio_filizola')
-        .update({ valor, status: 'corrigido' })
-        .eq('id', id)
-        .select()
-        .single()
+        .select('dados')
+        .eq('processo_id', processoId)
+        .maybeSingle()
 
-    return { dado: data as DadoExtraido | null, error }
+    const dados = current?.dados as DadosExtraidosProcesso | undefined
+    const existingField = dados?.[campo] as DadoExtraidoJsonb | undefined
+
+    const updatedDados = {
+        ...(dados || {}),
+        [campo]: {
+            valor,
+            confianca: existingField?.confianca ?? null,
+            status: 'corrigido' as const,
+            documento_origem_id: existingField?.documento_origem_id ?? null,
+            tipo_documento_origem: existingField?.tipo_documento_origem ?? 'OUTRO',
+            criado_em: existingField?.criado_em ?? new Date().toISOString(),
+        },
+    }
+
+    const { error } = await supabase
+        .from('dados_extraidos_gestao_escritorio_filizola')
+        .update({ dados: updatedDados })
+        .eq('processo_id', processoId)
+
+    return { error: error as Error | null }
 }
 
-export async function confirmarDadoExtraido(id: string) {
-    const { data, error } = await supabase
-        .from('dados_extraidos_gestao_escritorio_filizola')
-        .update({ status: 'confirmado' })
-        .eq('id', id)
-        .select()
-        .single()
+// ============================================
+// Upsert via RPC (usado pela Edge Function)
+// ============================================
 
-    return { dado: data as DadoExtraido | null, error }
+export async function upsertDadosExtraidos(
+    processoId: string,
+    clienteId: string,
+    documentoOrigemId: string,
+    tipoDocumento: string,
+    campos: Record<string, { valor: string; confianca: number }>,
+) {
+    const dadosJsonb: Record<string, { valor: string; confianca: number }> = {}
+    for (const [campo, info] of Object.entries(campos)) {
+        dadosJsonb[campo] = { valor: info.valor, confianca: info.confianca }
+    }
+
+    const { error } = await supabase.rpc('upsert_dados_extraidos_jsonb', {
+        p_processo_id: processoId,
+        p_cliente_id: clienteId,
+        p_documento_origem_id: documentoOrigemId,
+        p_tipo_documento_origem: tipoDocumento,
+        p_dados: dadosJsonb,
+    })
+
+    return { error: error as Error | null }
 }
+
+// ============================================
+// Exclusão
+// ============================================
 
 export async function deletarDadosExtraidosPorProcesso(processoId: string) {
     const { error } = await supabase
@@ -59,16 +92,32 @@ export async function deletarDadosExtraidosPorProcesso(processoId: string) {
         .delete()
         .eq('processo_id', processoId)
 
-    return { error }
+    return { error: error as Error | null }
 }
 
-export async function deletarDadosExtraidosPorDocumento(documentoId: string) {
+export async function deletarDadosExtraidosPorDocumento(processoId: string, documentoId: string) {
+    const { data: current } = await supabase
+        .from('dados_extraidos_gestao_escritorio_filizola')
+        .select('dados')
+        .eq('processo_id', processoId)
+        .maybeSingle()
+
+    const dados = current?.dados as DadosExtraidosProcesso | undefined
+    if (!dados) return { error: null as Error | null }
+
+    // Remover campos onde documento_origem_id corresponde
+    const filtrado = Object.fromEntries(
+        Object.entries(dados).filter(
+            ([_, value]) => value.documento_origem_id !== documentoId,
+        ),
+    )
+
     const { error } = await supabase
         .from('dados_extraidos_gestao_escritorio_filizola')
-        .delete()
-        .eq('documento_origem_id', documentoId)
+        .update({ dados: filtrado })
+        .eq('processo_id', processoId)
 
-    return { error }
+    return { error: error as Error | null }
 }
 
 // ============================================
@@ -76,7 +125,6 @@ export async function deletarDadosExtraidosPorDocumento(documentoId: string) {
 // ============================================
 
 export async function montarDadosParaPeticao(processoId: string, clienteId: string): Promise<Record<string, string>> {
-    // Buscar processo com cliente
     const { data: processo } = await supabase
         .from('processos_gestao_escritorio_filizola')
         .select('*, cliente:clientes_gestao_escritorio_filizola(*)')
@@ -87,20 +135,18 @@ export async function montarDadosParaPeticao(processoId: string, clienteId: stri
 
     const cliente = processo.cliente as unknown as Cliente
 
-    // Buscar dados extraídos
+    // Buscar dados extraídos da tabela dedicada
     const { dados: dadosExtraidos } = await buscarDadosExtraidosPorProcesso(processoId)
 
-    // Montar mapa de campo -> valor a partir dos dados extraídos
+    // Extrair valores planos do JSONB
     const mapaExtraidos: Record<string, string> = {}
-    if (dadosExtraidos) {
-        for (const dado of dadosExtraidos) {
-            if (dado.valor && dado.valor !== 'null') {
-                mapaExtraidos[dado.campo] = dado.valor
-            }
+    for (const [campo, info] of Object.entries(dadosExtraidos)) {
+        if (info.valor && info.valor !== 'null') {
+            mapaExtraidos[campo] = info.valor
         }
     }
 
-    // Montar endereço a partir de dados extraídos ou do cliente
+    // Montar endereço
     const montarEndereco = () => {
         const logradouro = mapaExtraidos['logradouro'] || cliente.endereco?.logradouro || ''
         const numero = mapaExtraidos['numero'] || cliente.endereco?.numero || ''
@@ -131,22 +177,12 @@ export async function montarDadosParaPeticao(processoId: string, clienteId: stri
         der: processo.der ? new Date(processo.der).toLocaleDateString('pt-BR') : '',
     }
 
-    // Adicionar variáveis extras dos dados extraídos (laudo, certidão, etc.)
-    if (mapaExtraidos['diagnostico']) variaveis['diagnostico'] = mapaExtraidos['diagnostico']
-    if (mapaExtraidos['cid']) variaveis['cid'] = mapaExtraidos['cid']
-    if (mapaExtraidos['medico']) variaveis['medico'] = mapaExtraidos['medico']
-    if (mapaExtraidos['crm']) variaveis['crm'] = mapaExtraidos['crm']
-    if (mapaExtraidos['cartorio']) variaveis['cartorio'] = mapaExtraidos['cartorio']
-    if (mapaExtraidos['nome_mae']) variaveis['nome_mae'] = mapaExtraidos['nome_mae']
-    if (mapaExtraidos['nome_pai']) variaveis['nome_pai'] = mapaExtraidos['nome_pai']
-    if (mapaExtraidos['nome_falecido']) variaveis['nome_falecido'] = mapaExtraidos['nome_falecido']
-    if (mapaExtraidos['data_obito']) variaveis['data_obito'] = mapaExtraidos['data_obito']
-    if (mapaExtraidos['medicamento']) variaveis['medicamento'] = mapaExtraidos['medicamento']
-    if (mapaExtraidos['posologia']) variaveis['posologia'] = mapaExtraidos['posologia']
-    if (mapaExtraidos['conteudo_texto']) variaveis['conteudo_texto'] = mapaExtraidos['conteudo_texto']
-    if (mapaExtraidos['naturalidade']) variaveis['naturalidade'] = mapaExtraidos['naturalidade']
-    if (mapaExtraidos['rg_numero']) variaveis['rg_numero'] = mapaExtraidos['rg_numero']
-    if (mapaExtraidos['orgao_expedidor']) variaveis['orgao_expedidor'] = mapaExtraidos['orgao_expedidor']
+    // Adicionar todos os campos extras do JSONB automaticamente
+    for (const [campo, valor] of Object.entries(mapaExtraidos)) {
+        if (!variaveis[campo]) {
+            variaveis[campo] = valor
+        }
+    }
 
     // Calcular idade
     const dataNasc = mapaExtraidos['data_nascimento']
@@ -163,8 +199,6 @@ export async function montarDadosParaPeticao(processoId: string, clienteId: stri
     if (cliente.sexo && cliente.sexo !== 'nao_informado') {
         variaveis['sexo'] = cliente.sexo === 'masculino' ? 'masculino' : 'feminino'
     }
-
-    return variaveis
 
     return variaveis
 }

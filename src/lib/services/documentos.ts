@@ -42,6 +42,7 @@ export async function uploadDocumento(params: {
         .from('documentos_gestao_escritorio_filizola')
         .insert({
             processo_id: params.processoId,
+            cliente_id: params.clienteId,
             tipo_documento: params.tipo_documento,
             categoria_documento: params.categoria_documento,
             storage_path: storagePath,

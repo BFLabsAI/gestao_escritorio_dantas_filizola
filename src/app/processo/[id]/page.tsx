@@ -1,18 +1,56 @@
 "use client"
 
-import Image from "next/image"
-import { use, useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { Component, use, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import DashboardLayout from "@/components/layout/dashboard-layout"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+
+// Error Boundary para capturar crashes de renderização sem derrubar a página inteira
+class ErrorBoundary extends Component<
+    { children: React.ReactNode },
+    { hasError: boolean; error: Error | null }
+> {
+    state = { hasError: false, error: null as Error | null }
+
+    static getDerivedStateFromError(error: Error) {
+        return { hasError: true, error }
+    }
+
+    componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+        console.error('[ErrorBoundary] Erro de renderização:', error, errorInfo)
+    }
+
+    render() {
+        if (this.state.hasError) {
+            return (
+                <DashboardLayout>
+                    <div className="flex items-center justify-center min-h-[60vh] px-12">
+                        <div className="max-w-lg w-full rounded-xl border border-red-500/30 bg-red-500/5 p-8 text-center">
+                            <p className="text-red-400 font-bold text-lg mb-3">Erro ao renderizar a página</p>
+                            <p className="text-sm text-[#A3A3A3A] mb-4 break-words font-mono bg-[#0A0A0A] p-3 rounded-lg text-left">
+                                {this.state.error?.message || 'Erro desconhecido'}
+                            </p>
+                            <button
+                                onClick={() => this.setState({ hasError: false, error: null })}
+                                className="px-4 py-2 rounded-lg bg-[#FACC15] text-black font-bold text-sm hover:bg-[#EAB308]"
+                            >
+                                Tentar novamente
+                            </button>
+                        </div>
+                    </div>
+                </DashboardLayout>
+            )
+        }
+        return this.props.children
+    }
+}
 import { buscarProcessoPorId } from "@/lib/services/processos"
 import {
     analisarDocumentos,
     buscarDocumentosPorProcesso,
     deletarDocumento,
     getUrlDocumento,
-    getBatchSignedUrls,
     uploadDocumento,
 } from "@/lib/services/documentos"
 import { moverProcessoFase } from "@/lib/services/processos"
@@ -28,7 +66,7 @@ import {
     atualizarDadoExtraido,
 } from "@/lib/services/dados-extraidos"
 import { supabase } from "@/lib/supabase/client"
-import type { Documento, ExigenciaDoc, Processo, ModeloPeticao, PeticaoGerada, DadoExtraido, FaseKanban } from "@/lib/types/database"
+import type { Documento, ExigenciaDoc, Processo, ModeloPeticao, PeticaoGerada, DadoExtraidoJsonb, DadosExtraidosProcesso, FaseKanban, Agrupamento } from "@/lib/types/database"
 import {
     FASE_KANBAN_LABELS,
     FASE_KANBAN_COLORS,
@@ -56,6 +94,8 @@ import {
     ChevronUp,
 } from "lucide-react"
 import ComentariosProcesso from "@/components/comentarios-processo"
+import { FolderSection } from "@/components/folder-section"
+import { agruparDocumentosPorPasta } from "@/lib/services/pastas-documentos"
 
 type DocumentoComPreview = Documento & {
     previewUrl?: string | null
@@ -123,10 +163,155 @@ function CollapsibleSection({
     )
 }
 
+function isPreviewable(mimetype: string | null): boolean {
+    if (!mimetype) return false
+    return mimetype.startsWith('image/') || mimetype === 'application/pdf'
+}
+
+function PastasDocumentos({
+    documentos,
+    onDelete,
+    onOpenFile,
+    onDownloadFile,
+}: {
+    documentos: DocumentoComPreview[]
+    onDelete: (id: string, storagePath: string) => void
+    onOpenFile: (doc: DocumentoComPreview) => void
+    onDownloadFile: (doc: DocumentoComPreview) => void
+}) {
+    const [erro, setErro] = useState<string | null>(null)
+
+    let grupos: Agrupamento[] = []
+    try {
+        grupos = agruparDocumentosPorPasta(documentos)
+    } catch (e) {
+        console.error('[PastasDocumentos] Erro ao agrupar documentos:', e)
+        setErro('Erro ao organizar pastas. Mostrando lista simples.')
+    }
+
+    if (erro) {
+        return (
+            <>
+                <p className="text-xs text-red-400 mb-2">{erro}</p>
+                {documentos.map((doc) => (
+                    <DocumentoItem
+                        key={doc.id}
+                        doc={doc}
+                        onDelete={() => onDelete(doc.id, doc.storage_path)}
+                        onOpenFile={() => onOpenFile(doc)}
+                        onDownload={() => onDownloadFile(doc)}
+                    />
+                ))}
+            </>
+        )
+    }
+
+    return (
+        <>
+            {grupos.map((grupo) => (
+                <FolderSection
+                    key={grupo.pasta.id}
+                    nome={grupo.pasta.nome}
+                    badge={String(grupo.documentos.length + grupo.subpastas.reduce((acc, s) => acc + s.documentos.length, 0))}
+                    defaultOpen={true}
+                >
+                    {grupo.documentos.map((doc) => (
+                        <DocumentoItem
+                            key={doc.id}
+                            doc={doc}
+                            onDelete={() => onDelete(doc.id, doc.storage_path)}
+                            onOpenFile={() => onOpenFile(doc)}
+                            onDownload={() => onDownloadFile(doc)}
+                        />
+                    ))}
+                    {grupo.subpastas.map((sub) => (
+                        <FolderSection
+                            key={sub.pasta.id}
+                            nome={sub.pasta.nome}
+                            subfolder
+                            badge={String(sub.documentos.length)}
+                            defaultOpen={true}
+                        >
+                            {sub.documentos.map((doc) => (
+                                <DocumentoItem
+                                    key={doc.id}
+                                    doc={doc}
+                                    onDelete={() => onDelete(doc.id, doc.storage_path)}
+                                    onOpenFile={() => onOpenFile(doc)}
+                                    onDownload={() => onDownloadFile(doc)}
+                                />
+                            ))}
+                        </FolderSection>
+                    ))}
+                </FolderSection>
+            ))}
+        </>
+    )
+}
+
+function DocumentoItem({
+    doc,
+    onDelete,
+    onOpenFile,
+    onDownload,
+}: {
+    doc: DocumentoComPreview
+    onDelete: () => void
+    onOpenFile: () => void | Promise<void>
+    onDownload: () => void | Promise<void>
+}) {
+    const podeVisualizar = isPreviewable(doc.mimetype)
+
+    return (
+        <div className="ml-8 rounded-xl border border-[#333333] bg-[#0A0A0A] p-4">
+            <div className="mb-3 flex items-center justify-between gap-3">
+                <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-white truncate">{getTipoDocumentoLabel(doc.tipo_documento)}</p>
+                    <p className="text-xs text-[#A3A3A3] truncate">{doc.nome_arquivo_original || doc.storage_path}</p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                    <Badge className="bg-[#1F1F1F] text-white border border-[#333333]">
+                        {doc.qualidade_documento}
+                    </Badge>
+                    <button
+                        type="button"
+                        onClick={onDelete}
+                        className="h-7 w-7 rounded flex items-center justify-center bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 transition-colors"
+                        title="Excluir documento"
+                    >
+                        <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                </div>
+            </div>
+
+            <div className="flex gap-2">
+                {podeVisualizar && (
+                    <button
+                        type="button"
+                        onClick={onOpenFile}
+                        className="flex-1 flex items-center justify-center gap-2 rounded-lg border border-[#333333] bg-[#171717] px-4 py-3 text-sm text-white hover:border-[#FACC15]/30 cursor-pointer"
+                    >
+                        {doc.mimetype?.includes("pdf") ? <FileText className="h-4 w-4 text-[#FACC15]" /> : <FileImage className="h-4 w-4 text-[#FACC15]" />}
+                        Abrir arquivo
+                    </button>
+                )}
+                <button
+                    type="button"
+                    onClick={onDownload}
+                    className="flex-1 flex items-center justify-center gap-2 rounded-lg border border-[#333333] bg-[#171717] px-4 py-3 text-sm text-white hover:border-[#FACC15]/30 cursor-pointer"
+                >
+                    <Download className="h-4 w-4 text-[#FACC15]" />
+                    Baixar
+                </button>
+            </div>
+        </div>
+    )
+}
+
 function getChecklistFromData(
     exigencias: ExigenciaDoc[],
     documentos: Documento[],
-    dadosExtraidos: DadoExtraido[],
+    dadosExtraidos: DadosExtraidosProcesso,
 ): ChecklistItem[] {
     const entregues = new Set(
         documentos
@@ -141,9 +326,9 @@ function getChecklistFromData(
     )
 
     const camposExtraidos = new Set(
-        dadosExtraidos
-            .filter((d) => d.valor && d.valor !== "null")
-            .map((d) => d.campo),
+        Object.entries(dadosExtraidos)
+            .filter(([, info]) => info.valor && info.valor !== "null")
+            .map(([campo]) => campo),
     )
 
     return exigencias
@@ -185,7 +370,7 @@ export default function ProcessoAuditPage({ params }: { params: Promise<{ id: st
     const [modeloPeticao, setModeloPeticao] = useState<ModeloPeticao | null>(null)
     const [peticoesGeradas, setPeticoesGeradas] = useState<PeticaoGerada[]>([])
     const [gerandoPeticao, setGerandoPeticao] = useState(false)
-    const [dadosExtraidos, setDadosExtraidos] = useState<DadoExtraido[]>([])
+    const [dadosExtraidos, setDadosExtraidos] = useState<DadosExtraidosProcesso>({})
     const [editandoDado, setEditandoDado] = useState<string | null>(null)
     const [valorEditado, setValorEditado] = useState("")
     const [salvandoDado, setSalvandoDado] = useState(false)
@@ -212,45 +397,53 @@ export default function ProcessoAuditPage({ params }: { params: Promise<{ id: st
 
             // Fase 2: Todas as chamadas independentes em paralelo (1 round-trip)
             const [
-                { documentos: documentosData },
+                docsResult,
                 exigenciasResponse,
-                { modelo: modeloData },
-                { peticoes: peticoesData },
-                { dados: dadosData },
+                modeloResult,
+                peticoesResult,
+                dadosResult,
             ] = await Promise.all([
-                buscarDocumentosPorProcesso(resolvedParams.id),
+                buscarDocumentosPorProcesso(resolvedParams.id).catch(e => {
+                    console.error('[carregarProcesso] Erro ao buscar documentos:', e)
+                    return { documentos: [], error: e }
+                }),
                 supabase
                     .from("exigencias_doc_gestao_escritorio_filizola")
                     .select("*")
                     .eq("tipo_beneficio", processoData.tipo_beneficio)
                     .eq("ativo", true)
                     .order("ordem_exibicao", { ascending: true }),
-                buscarModeloPorBeneficio(processoData.tipo_beneficio),
-                buscarPeticoesPorProcesso(resolvedParams.id),
-                buscarDadosExtraidosPorProcesso(resolvedParams.id),
+                buscarModeloPorBeneficio(processoData.tipo_beneficio).catch(e => {
+                    console.error('[carregarProcesso] Erro ao buscar modelo:', e)
+                    return { modelo: null, error: e }
+                }),
+                buscarPeticoesPorProcesso(resolvedParams.id).catch(e => {
+                    console.error('[carregarProcesso] Erro ao buscar petições:', e)
+                    return { peticoes: [], error: e }
+                }),
+                buscarDadosExtraidosPorProcesso(resolvedParams.id).catch(e => {
+                    console.error('[carregarProcesso] Erro ao buscar dados extraidos:', e)
+                    return { dados: {}, error: e }
+                }),
             ])
 
             const exigenciasData = (exigenciasResponse.data ?? []) as ExigenciaDoc[]
-            const documentosBase = (documentosData ?? []) as Documento[]
-
-            // Fase 3: Batch de signed URLs (1 chamada paralela para todas as imagens)
-            const imagePaths = documentosBase
-                .filter((d) => d.mimetype?.startsWith("image/"))
-                .map((d) => d.storage_path)
-
-            const urlMap = imagePaths.length > 0 ? await getBatchSignedUrls(imagePaths) : new Map<string, string>()
+            const documentosBase = docsResult.documentos ?? []
 
             const documentosComPreview: DocumentoComPreview[] = documentosBase.map((doc) => ({
                 ...doc,
-                previewUrl: doc.mimetype?.startsWith("image/") ? (urlMap.get(doc.storage_path) ?? null) : null,
+                previewUrl: null,
             }))
 
             setDocumentos(documentosComPreview)
             setExigencias(exigenciasData)
-            setChecklist(getChecklistFromData(exigenciasData, documentosBase, dadosData ?? []))
-            setModeloPeticao(modeloData)
-            setPeticoesGeradas(peticoesData ?? [])
-            setDadosExtraidos(dadosData ?? [])
+            setChecklist(getChecklistFromData(exigenciasData, documentosBase, dadosResult.dados ?? {}))
+            setModeloPeticao(modeloResult.modelo)
+            setPeticoesGeradas(peticoesResult.peticoes ?? [])
+            setDadosExtraidos(dadosResult.dados ?? [])
+        } catch (err) {
+            console.error('[carregarProcesso] Erro:', err)
+            setErro(err instanceof Error ? err.message : 'Erro ao carregar processo.')
         } finally {
             setLoading(false)
         }
@@ -265,19 +458,36 @@ export default function ProcessoAuditPage({ params }: { params: Promise<{ id: st
         [checklist]
     )
 
-    // Agrupar dados extraídos por campo (último valor de cada campo)
+    // Agrupar dados extraídos (JSONB já é deduplicado por campo)
     const dadosAgrupados = useMemo(() => {
-        const mapa: Record<string, DadoExtraido> = {}
-        for (const dado of dadosExtraidos) {
-            // Se já existe, manter o que tem maior confiança ou que foi corrigido
-            const existente = mapa[dado.campo]
-            if (!existente ||
-                dado.status === 'corrigido' ||
-                (dado.confianca !== null && (existente.confianca === null || dado.confianca > existente.confianca))) {
-                mapa[dado.campo] = dado
+        const mapa: Record<string, DadoExtraidoJsonb> = { ...dadosExtraidos }
+
+        // Calcular idade a partir da data de nascimento extraída
+        const dataNasc = mapa['data_nascimento']?.valor
+        if (dataNasc) {
+            const nasc = new Date(dataNasc.includes('/') ? dataNasc.split('/').reverse().join('-') : dataNasc)
+            if (!isNaN(nasc.getTime())) {
+                const hoje = new Date()
+                let anos = hoje.getFullYear() - nasc.getFullYear()
+                let meses = hoje.getMonth() - nasc.getMonth()
+                let dias = hoje.getDate() - nasc.getDate()
+                if (dias < 0) { meses--; dias += new Date(hoje.getFullYear(), hoje.getMonth(), 0).getDate() }
+                if (meses < 0) { anos--; meses += 12 }
+                const textoIdade = `${anos} ano${anos !== 1 ? 's' : ''}, ${meses} mese${meses !== 1 ? 's' : ''} e ${dias} dia${dias !== 1 ? 's' : ''}`
+                mapa['idade'] = {
+                    valor: textoIdade,
+                    confianca: null,
+                    status: 'confirmado',
+                    tipo_documento_origem: 'OUTRO',
+                    documento_origem_id: null,
+                    criado_em: new Date().toISOString(),
+                }
             }
         }
-        return Object.values(mapa).sort((a, b) => a.campo.localeCompare(b.campo))
+
+        return Object.entries(mapa)
+            .filter(([, info]) => info.valor && info.valor !== 'null')
+            .sort(([a], [b]) => a.localeCompare(b))
     }, [dadosExtraidos])
 
     async function executarAnalise() {
@@ -339,8 +549,16 @@ export default function ProcessoAuditPage({ params }: { params: Promise<{ id: st
         }
 
         e.target.value = ''
-        await carregarProcesso()
-        await executarAnalise()
+        try {
+            await carregarProcesso()
+        } catch (err) {
+            console.error('[handleFileChange] Erro ao recarregar processo:', err)
+        }
+        try {
+            await executarAnalise()
+        } catch (err) {
+            console.error('[handleFileChange] Erro na analise:', err)
+        }
         setUploading(false)
     }
 
@@ -447,9 +665,11 @@ export default function ProcessoAuditPage({ params }: { params: Promise<{ id: st
         setSalvandoPeticao(false)
     }
 
-    function handleIniciarEdicao(dado: DadoExtraido) {
-        setEditandoDado(dado.id)
-        setValorEditado(dado.valor)
+    function handleIniciarEdicao(campo: string) {
+        const info = dadosExtraidos[campo]
+        if (!info) return
+        setEditandoDado(campo)
+        setValorEditado(info.valor)
     }
 
     function handleCancelarEdicao() {
@@ -457,11 +677,12 @@ export default function ProcessoAuditPage({ params }: { params: Promise<{ id: st
         setValorEditado("")
     }
 
-    async function handleSalvarEdicao(dadoId: string) {
+    async function handleSalvarEdicao(campo: string) {
+        if (!processo) return
         setSalvandoDado(true)
         setErro("")
 
-        const { error } = await atualizarDadoExtraido(dadoId, valorEditado)
+        const { error } = await atualizarDadoExtraido(processo.id, campo, valorEditado)
 
         if (error) {
             setErro(`Erro ao salvar: ${error.message}`)
@@ -472,6 +693,49 @@ export default function ProcessoAuditPage({ params }: { params: Promise<{ id: st
         }
 
         setSalvandoDado(false)
+    }
+
+    async function handleOpenOrDownload(doc: DocumentoComPreview) {
+        const { url } = await getUrlDocumento(doc.storage_path)
+        if (!url) return
+        try {
+            const response = await fetch(url)
+            const blob = await response.blob()
+            if (isPreviewable(doc.mimetype)) {
+                const blobUrl = URL.createObjectURL(blob)
+                window.open(blobUrl, "_blank", "noopener,noreferrer")
+            } else {
+                const blobUrl = URL.createObjectURL(blob)
+                const link = document.createElement('a')
+                link.href = blobUrl
+                link.download = doc.nome_arquivo_original || doc.storage_path.split('/').pop() || 'documento'
+                document.body.appendChild(link)
+                link.click()
+                document.body.removeChild(link)
+                URL.revokeObjectURL(blobUrl)
+            }
+        } catch {
+            setErro('Erro ao abrir documento.')
+        }
+    }
+
+    async function handleDownload(doc: DocumentoComPreview) {
+        const { url } = await getUrlDocumento(doc.storage_path)
+        if (!url) return
+        try {
+            const response = await fetch(url)
+            const blob = await response.blob()
+            const blobUrl = URL.createObjectURL(blob)
+            const link = document.createElement('a')
+            link.href = blobUrl
+            link.download = doc.nome_arquivo_original || doc.storage_path.split('/').pop() || 'documento'
+            document.body.appendChild(link)
+            link.click()
+            document.body.removeChild(link)
+            URL.revokeObjectURL(blobUrl)
+        } catch {
+            setErro('Erro ao baixar documento.')
+        }
     }
 
     if (loading) {
@@ -493,8 +757,9 @@ export default function ProcessoAuditPage({ params }: { params: Promise<{ id: st
     }
 
     return (
-        <DashboardLayout>
-            <div className="flex flex-col gap-8 px-12 py-10 w-full max-w-7xl">
+        <ErrorBoundary>
+            <DashboardLayout>
+                <div className="flex flex-col gap-8 px-12 py-10 w-full max-w-7xl">
                 <div className="flex flex-col gap-4">
                     <Link
                         href="/board"
@@ -660,43 +925,43 @@ export default function ProcessoAuditPage({ params }: { params: Promise<{ id: st
                                 </div>
                             ) : (
                                 <div className="pt-4 space-y-2">
-                                    {dadosAgrupados.map((dado) => (
+                                    {dadosAgrupados.map(([campo, info]) => (
                                         <div
-                                            key={dado.id}
+                                            key={campo}
                                             className="flex items-center justify-between rounded-lg border border-[#333333] bg-[#0A0A0A] px-4 py-3 group"
                                         >
                                             <div className="flex items-center gap-3 min-w-0 flex-1">
                                                 <span className={`h-2 w-2 rounded-full shrink-0 ${
-                                                    dado.status === 'corrigido'
+                                                    info.status === 'corrigido'
                                                         ? 'bg-yellow-400'
-                                                        : dado.status === 'confirmado'
+                                                        : info.status === 'confirmado'
                                                           ? 'bg-green-400'
-                                                          : dado.confianca !== null && dado.confianca >= 0.7
+                                                          : info.confianca !== null && info.confianca >= 0.7
                                                             ? 'bg-blue-400'
                                                             : 'bg-orange-400'
                                                 }`} />
                                                 <div className="min-w-0 flex-1">
                                                     <p className="text-xs text-[#525252]">
-                                                        {CAMPO_LABELS[dado.campo] || dado.campo}
+                                                        {CAMPO_LABELS[campo] || campo}
                                                         <span className="ml-2 text-[10px] text-[#333333]">
-                                                            ({getTipoDocumentoLabel(dado.tipo_documento_origem)})
+                                                            ({getTipoDocumentoLabel(info.tipo_documento_origem)})
                                                         </span>
                                                     </p>
-                                                    {editandoDado === dado.id ? (
+                                                    {editandoDado === campo ? (
                                                         <div className="flex items-center gap-2 mt-1">
                                                             <input
                                                                 type="text"
                                                                 value={valorEditado}
                                                                 onChange={(e) => setValorEditado(e.target.value)}
                                                                 onKeyDown={(e) => {
-                                                                    if (e.key === 'Enter') handleSalvarEdicao(dado.id)
+                                                                    if (e.key === 'Enter') handleSalvarEdicao(campo)
                                                                     if (e.key === 'Escape') handleCancelarEdicao()
                                                                 }}
                                                                 className="flex-1 bg-[#171717] border border-[#FACC15]/30 rounded px-2 py-1 text-sm text-white focus:outline-none"
                                                                 autoFocus
                                                             />
                                                             <button
-                                                                onClick={() => handleSalvarEdicao(dado.id)}
+                                                                onClick={() => handleSalvarEdicao(campo)}
                                                                 disabled={salvandoDado}
                                                                 className="p-1 rounded bg-green-500/10 text-green-400 hover:bg-green-500/20"
                                                             >
@@ -710,24 +975,24 @@ export default function ProcessoAuditPage({ params }: { params: Promise<{ id: st
                                                             </button>
                                                         </div>
                                                     ) : (
-                                                        <p className="text-sm text-white truncate">{dado.valor}</p>
+                                                        <p className="text-sm text-white" style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }} title={info.valor}>{info.valor}</p>
                                                     )}
                                                 </div>
                                             </div>
-                                            {editandoDado !== dado.id && (
+                                            {editandoDado !== campo && (
                                                 <div className="flex items-center gap-2 shrink-0 ml-3">
-                                                    {dado.confianca !== null && (
+                                                    {info.confianca !== null && (
                                                         <span className={`text-[10px] font-mono ${
-                                                            dado.confianca >= 0.7 ? 'text-green-400' : 'text-orange-400'
+                                                            info.confianca >= 0.7 ? 'text-green-400' : 'text-orange-400'
                                                         }`}>
-                                                            {(dado.confianca * 100).toFixed(0)}%
+                                                            {(info.confianca * 100).toFixed(0)}%
                                                         </span>
                                                     )}
-                                                    {dado.status === 'corrigido' && (
+                                                    {info.status === 'corrigido' && (
                                                         <span className="text-[10px] text-yellow-400">Corrigido</span>
                                                     )}
                                                     <button
-                                                        onClick={() => handleIniciarEdicao(dado)}
+                                                        onClick={() => handleIniciarEdicao(campo)}
                                                         className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded bg-[#1F1F1F] text-[#A3A3A3] hover:text-white"
                                                         title="Editar"
                                                     >
@@ -742,74 +1007,27 @@ export default function ProcessoAuditPage({ params }: { params: Promise<{ id: st
                         </CollapsibleSection>
                     </div>
 
-                    {/* Documentos Enviados */}
+                    {/* Documentos Enviados - Organização por Pastas */}
                     <CollapsibleSection
                         title="Documentos enviados"
                         badge={`${documentos.length} arquivo(s)`}
                         defaultOpen={true}
                     >
-                        <div className="pt-4 space-y-4">
+                        <div className="pt-4">
                             {documentos.length === 0 ? (
                                 <div className="rounded-xl border border-dashed border-[#333333] bg-[#0A0A0A] p-10 text-center">
                                     <UploadCloud className="mx-auto mb-3 h-8 w-8 text-[#FACC15]" />
                                     <p className="text-sm text-[#A3A3A3]">Nenhum documento enviado ainda.</p>
                                 </div>
                             ) : (
-                                documentos.map((doc) => (
-                                    <div key={doc.id} className="rounded-xl border border-[#333333] bg-[#0A0A0A] p-4">
-                                        <div className="mb-3 flex items-center justify-between gap-3">
-                                            <div className="flex-1 min-w-0">
-                                                <p className="text-sm font-semibold text-white truncate">{getTipoDocumentoLabel(doc.tipo_documento)}</p>
-                                                <p className="text-xs text-[#A3A3A3] truncate">{doc.nome_arquivo_original || doc.storage_path}</p>
-                                            </div>
-                                            <div className="flex items-center gap-2 shrink-0">
-                                                <Badge className="bg-[#1F1F1F] text-white border border-[#333333]">
-                                                    {doc.qualidade_documento}
-                                                </Badge>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => handleDeleteDocumento(doc.id, doc.storage_path)}
-                                                    className="h-7 w-7 rounded flex items-center justify-center bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 transition-colors"
-                                                    title="Excluir documento"
-                                                >
-                                                    <Trash2 className="h-3.5 w-3.5" />
-                                                </button>
-                                            </div>
-                                        </div>
-
-                                        {doc.previewUrl ? (
-                                            <div className="block overflow-hidden rounded-lg border border-[#333333]">
-                                                <Image
-                                                    src={doc.previewUrl}
-                                                    alt={doc.nome_arquivo_original || doc.tipo_documento}
-                                                    width={1200}
-                                                    height={900}
-                                                    className="max-h-72 w-full object-cover"
-                                                />
-                                            </div>
-                                        ) : (
-                                            <button
-                                                type="button"
-                                                onClick={async () => {
-                                                    const { url } = await getUrlDocumento(doc.storage_path)
-                                                    if (!url) return
-                                                    try {
-                                                        const response = await fetch(url)
-                                                        const blob = await response.blob()
-                                                        const blobUrl = URL.createObjectURL(blob)
-                                                        window.open(blobUrl, "_blank", "noopener,noreferrer")
-                                                    } catch {
-                                                        setErro('Erro ao abrir documento.')
-                                                    }
-                                                }}
-                                                className="flex items-center gap-3 rounded-lg border border-[#333333] bg-[#171717] px-4 py-3 text-sm text-white hover:border-[#FACC15]/30 w-full text-left cursor-pointer"
-                                            >
-                                                {doc.mimetype?.includes("pdf") ? <FileText className="h-4 w-4 text-[#FACC15]" /> : <FileImage className="h-4 w-4 text-[#FACC15]" />}
-                                                Abrir arquivo
-                                            </button>
-                                        )}
-                                    </div>
-                                ))
+                                <div className="space-y-1">
+                                    <PastasDocumentos
+                                        documentos={documentos}
+                                        onDelete={handleDeleteDocumento}
+                                        onOpenFile={handleOpenOrDownload}
+                                        onDownloadFile={handleDownload}
+                                    />
+                                </div>
                             )}
                         </div>
                     </CollapsibleSection>
@@ -988,6 +1206,7 @@ export default function ProcessoAuditPage({ params }: { params: Promise<{ id: st
                     )}
                 </div>
             </div>
-        </DashboardLayout>
+            </DashboardLayout>
+        </ErrorBoundary>
     )
 }

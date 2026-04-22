@@ -62,6 +62,7 @@ export interface Cliente {
         uf?: string
         cep?: string
     } | null
+    ativo: boolean
     criado_em: string
     atualizado_em: string
     criado_por: string | null
@@ -90,6 +91,7 @@ export interface Processo {
 export interface Documento {
     id: string
     processo_id: string
+    cliente_id: string | null
     tipo_documento: TipoDocumento
     categoria_documento: CategoriaDocumento
     storage_path: string
@@ -144,15 +146,22 @@ export interface DadoExtraido {
     id: string
     processo_id: string
     cliente_id: string
-    documento_origem_id: string | null
-    tipo_documento_origem: string
-    campo: string
-    valor: string
-    confianca: number | null
-    status: 'extraido' | 'confirmado' | 'corrigido'
+    dados: DadosExtraidosProcesso
     criado_em: string
     atualizado_em: string
 }
+
+// Estrutura de cada campo dentro do JSONB dados_extraidos
+export interface DadoExtraidoJsonb {
+    valor: string
+    confianca: number | null
+    status: 'extraido' | 'confirmado' | 'corrigido'
+    documento_origem_id: string | null
+    tipo_documento_origem: string
+    criado_em: string
+}
+
+export type DadosExtraidosProcesso = Record<string, DadoExtraidoJsonb>
 
 export interface PeticaoGerada {
     id: string
@@ -219,6 +228,7 @@ export const FASE_KANBAN_COLORS: Record<FaseKanban, string> = {
 }
 
 export const TIPO_DOCUMENTO_LABELS: Record<string, string> = {
+    PETICAO_INICIAL: 'Petição Inicial',
     RG: 'Identidade (RG)',
     CNH: 'CNH',
     CPF: 'CPF',
@@ -237,8 +247,106 @@ export const TIPO_DOCUMENTO_LABELS: Record<string, string> = {
     RG_FALECIDO: 'Identidade do Falecido',
     CPF_FALECIDO: 'CPF do Falecido',
     PROCURACAO: 'Procuração',
+    CARTEIRA_OAB: 'Carteira da OAB',
     CONTRATO: 'Contrato',
     OUTRO: 'Outro',
+}
+
+// ============================================
+// Estrutura de pastas para organização de documentos
+// ============================================
+
+export interface Pasta {
+    id: string
+    nome: string
+    tipo: 'principal' | 'subpasta'
+    mapeamento: {
+        tipo_documento?: string[]
+        categoria_documento?: string[]
+        excluidos?: string[]
+    }
+    subpastas?: Pasta[]
+}
+
+export interface Agrupamento {
+    pasta: Pasta
+    documentos: Documento[]
+    subpastas: Agrupamento[]
+}
+
+export const PASTAS_PROCESSO: Pasta[] = [
+    {
+        id: 'peticao_inicial',
+        nome: 'Petição inicial',
+        tipo: 'principal',
+        mapeamento: { tipo_documento: ['PETICAO_INICIAL'] },
+    },
+    {
+        id: 'documento_pessoal',
+        nome: 'Documento pessoal do autor e/ou representante legal',
+        tipo: 'principal',
+        mapeamento: { categoria_documento: ['DADOS_PESSOAIS'] },
+    },
+    {
+        id: 'comprovante_endereco',
+        nome: 'Comprovante de endereço',
+        tipo: 'principal',
+        mapeamento: { tipo_documento: ['COMPROVANTE_RESIDENCIA'] },
+    },
+    {
+        id: 'procuracao_termos',
+        nome: 'Procuração e termos exigidos pelo INSS',
+        tipo: 'principal',
+        mapeamento: { tipo_documento: ['PROCURACAO'] },
+    },
+    {
+        id: 'carteira_oab',
+        nome: 'Carteira da OAB da advogada (Emmilly)',
+        tipo: 'principal',
+        mapeamento: { tipo_documento: ['CARTEIRA_OAB'] },
+    },
+    {
+        id: 'documentacao_medica',
+        nome: 'Documentação médica',
+        tipo: 'principal',
+        mapeamento: { categoria_documento: ['DOCUMENTOS_MEDICOS'] },
+        subpastas: [
+            {
+                id: 'laudos',
+                nome: 'Laudos',
+                tipo: 'subpasta',
+                mapeamento: { tipo_documento: ['LAUDO_MEDICO'] },
+            },
+            {
+                id: 'relatorios',
+                nome: 'Relatórios',
+                tipo: 'subpasta',
+                mapeamento: { tipo_documento: ['EXAME'] },
+            },
+            {
+                id: 'receitas',
+                nome: 'Receitas',
+                tipo: 'subpasta',
+                mapeamento: { tipo_documento: ['RECEITA'] },
+            },
+            {
+                id: 'outros_medicos',
+                nome: 'Outros documentos relevantes',
+                tipo: 'subpasta',
+                mapeamento: {
+                    categoria_documento: ['DOCUMENTOS_MEDICOS'],
+                    excluidos: ['LAUDO_MEDICO', 'EXAME', 'RECEITA'],
+                },
+            },
+        ],
+    },
+]
+
+export const PASTA_OUTROS: Pasta = {
+    id: 'outros',
+    nome: 'Outros documentos',
+    tipo: 'principal',
+    mapeamento: { categoria_documento: ['OUTROS'] },
 }
 
 export function formatarLabelDinamico(valor: string | null | undefined) {
@@ -289,6 +397,7 @@ export const CAMPO_LABELS: Record<string, string> = {
     nome_completo: 'Nome Completo',
     cpf: 'CPF',
     data_nascimento: 'Data de Nascimento',
+    idade: 'Idade',
     naturalidade: 'Naturalidade',
     uf_naturalidade: 'UF Naturalidade',
     rg_numero: 'Número do RG',

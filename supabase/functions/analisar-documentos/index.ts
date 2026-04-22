@@ -368,18 +368,21 @@ async function salvarDadosExtraidos(
 ) {
   if (dados.length === 0) return
 
-  const campos = dados.map((d) => ({
-    campo: d.campo,
-    valor: d.valor,
-    confianca: d.confianca,
-  }))
+  // Construir JSONB plano para a nova RPC
+  const dadosJsonb: Record<string, { valor: string; confianca: number }> = {}
+  for (const d of dados) {
+    dadosJsonb[d.campo] = {
+      valor: d.valor,
+      confianca: d.confianca,
+    }
+  }
 
-  const { data, error } = await supabase.rpc("insert_dados_extraidos", {
+  const { data, error } = await supabase.rpc("upsert_dados_extraidos_jsonb", {
     p_processo_id: processoId,
     p_cliente_id: clienteId,
     p_documento_origem_id: documentoId,
     p_tipo_documento_origem: tipoDocumento,
-    p_campos: campos,
+    p_dados: dadosJsonb,
   })
 
   if (error) {
@@ -388,7 +391,7 @@ async function salvarDadosExtraidos(
   }
 
   if (data?.success === false) {
-    console.error("Erro no insert RPC:", JSON.stringify(data))
+    console.error("Erro no upsert RPC:", JSON.stringify(data))
     throw new Error(`Erro ao salvar dados extraidos: ${data.error}`)
   }
 }
@@ -457,7 +460,28 @@ Deno.serve(async (req) => {
     const resultados = []
     const dadosExtraidosTotal: { documento_id: string; tipo: string; campos_extraidos: number }[] = []
 
+    function isSupportedByVision(mimetype: string | null): boolean {
+      if (!mimetype) return false
+      // GPT-4o vision suporta imagens e PDFs nativamente
+      // DOCX, XLSX, DOC e outros formatos de office nao sao suportados
+      return mimetype.startsWith("image/") || mimetype === "application/pdf"
+    }
+
     for (const documento of documentos as DocumentoRow[]) {
+      const mimetype = documento.mimetype ?? "application/octet-stream"
+
+      // Pular documentos que a IA de visão não consegue processar (DOCX, XLSX, etc.)
+      if (!isSupportedByVision(mimetype)) {
+        console.log(`[analisar-documentos] Pulando documento ${documento.id} (mimetype: ${mimetype}) - formato nao suportado pela IA de visao`)
+        resultados.push({
+          documento_id: documento.id,
+          tipo_documento: documento.tipo_documento,
+          categoria_documento: documento.categoria_documento,
+          qualidade_documento: "PENDENTE_ANALISE" as const,
+        })
+        continue
+      }
+
       const { data: fileData, error: downloadError } = await supabase.storage
         .from("documentos_processuais")
         .download(documento.storage_path)
@@ -467,7 +491,6 @@ Deno.serve(async (req) => {
       }
 
       const base64 = await arrayBufferToBase64(fileData)
-      const mimetype = documento.mimetype ?? "application/octet-stream"
 
       // 1. Classificar documento
       const classificacao = await classificarDocumento({
@@ -560,14 +583,15 @@ Deno.serve(async (req) => {
 
       const variaveisCustom = (modeloAtivo?.variaveis_customizadas as string[]) ?? []
       if (variaveisCustom.length > 0 && clienteId) {
-        // Buscar campos ja extraidos para nao duplicar
-        const { data: camposJaExtraidos } = await supabase
+        // Buscar campos ja extraidos para nao duplicar (via JSONB)
+        const { data: dadosExtraidosRow } = await supabase
           .from("dados_extraidos_gestao_escritorio_filizola")
-          .select("campo")
+          .select("dados")
           .eq("processo_id", processo_id)
+          .maybeSingle()
 
         const camposExistentes = new Set(
-          (camposJaExtraidos ?? []).map((d: { campo: string }) => d.campo),
+          Object.keys(dadosExtraidosRow?.dados || {}),
         )
 
         const variaveisParaExtrair = variaveisCustom.filter(
@@ -630,16 +654,17 @@ Deno.serve(async (req) => {
         .map((item) => item.tipo_documento),
     )
 
-    // Buscar dados extraidos para considerar campos extraidos de outros documentos
-    const { data: todosDadosExtraidos } = await supabase
+    // Buscar dados extraidos via JSONB para considerar campos extraidos de outros documentos
+    const { data: dadosChecklistRow } = await supabase
       .from("dados_extraidos_gestao_escritorio_filizola")
-      .select("campo, valor")
+      .select("dados")
       .eq("processo_id", processo_id)
+      .maybeSingle()
 
     const camposExtraidos = new Set(
-      (todosDadosExtraidos ?? [])
-        .filter((d: { campo: string; valor: string | null }) => d.valor && d.valor !== "null")
-        .map((d: { campo: string }) => d.campo),
+      Object.entries(dadosChecklistRow?.dados || {})
+        .filter(([_, v]: [string, any]) => v.valor && v.valor !== "null")
+        .map(([k]: [string, any]) => k),
     )
 
     // Mapeamento: tipo de documento exigido -> campo extraido que satisfaz a exigencia
