@@ -4,6 +4,7 @@ import { getTipoBeneficioLabel } from '@/lib/types/database'
 import { montarDadosParaPeticao } from '@/lib/services/dados-extraidos'
 import { adaptarGenero } from '@/lib/utils/adaptar-genero'
 import { jsPDF } from 'jspdf'
+import html2canvas from 'html2canvas'
 
 // ============================================
 // Variáveis disponíveis para substituição
@@ -131,8 +132,8 @@ export async function salvarModeloPeticao(params: {
             tipo_beneficio: params.tipoBeneficio,
             nome_arquivo: `template_${params.tipoBeneficio}`,
             nome_original: `Template ${params.tipoBeneficio}`,
-            storage_path: '',
-            public_url: '',
+            storage_path: null,
+            public_url: null,
             conteudo_template: params.conteudo,
             ativo: true,
             ordem_exibicao: ordem,
@@ -228,6 +229,61 @@ export async function deletarModeloPeticao(id: string) {
 // ============================================
 // Geração de Petições (PDF)
 // ============================================
+
+function isHtmlContent(content: string): boolean {
+    return content.trim().startsWith('<')
+}
+
+export async function gerarPdfHtml(conteudoHtml: string): Promise<Uint8Array> {
+    const container = document.createElement('div')
+    container.style.position = 'absolute'
+    container.style.left = '-9999px'
+    container.style.top = '0'
+    container.style.width = '210mm'
+    container.style.background = '#fff'
+    container.style.padding = '20mm'
+    container.style.fontFamily = 'Garamond, "Times New Roman", serif'
+    container.innerHTML = conteudoHtml
+
+    document.body.appendChild(container)
+
+    await new Promise((resolve) => setTimeout(resolve, 500))
+
+    const canvas = await html2canvas(container, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        backgroundColor: '#ffffff',
+    })
+
+    document.body.removeChild(container)
+
+    const imgData = canvas.toDataURL('image/png')
+    const imgWidth = 210
+    const pageHeight = 297
+    const imgHeight = (canvas.height * imgWidth) / canvas.width
+
+    const doc = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4',
+    })
+
+    let heightLeft = imgHeight
+    let position = 0
+
+    doc.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight)
+    heightLeft -= pageHeight
+
+    while (heightLeft > 0) {
+        position = heightLeft - imgHeight
+        doc.addPage()
+        doc.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight)
+        heightLeft -= pageHeight
+    }
+
+    return new Uint8Array(doc.output('arraybuffer'))
+}
 
 export function gerarPdf(conteudo: string, nomeCliente: string): Uint8Array {
     const doc = new jsPDF({
@@ -368,8 +424,13 @@ export async function gerarPeticao(params: {
     // Substituir variáveis
     const conteudoGerado = substituirVariaveis(templateAdaptado, variaveis)
 
-    // Gerar PDF
-    const pdfBuffer = gerarPdf(conteudoGerado, cliente?.nome_completo || 'cliente')
+    // Gerar PDF - detectar se é HTML ou texto
+    let pdfBuffer: Uint8Array
+    if (isHtmlContent(conteudoGerado)) {
+        pdfBuffer = await gerarPdfHtml(conteudoGerado)
+    } else {
+        pdfBuffer = gerarPdf(conteudoGerado, cliente?.nome_completo || 'cliente')
+    }
 
     // Salvar PDF no storage
     const timestamp = Date.now()

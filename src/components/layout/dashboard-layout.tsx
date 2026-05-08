@@ -96,7 +96,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 <input
                   type="search"
                   placeholder="Buscar CPF, Nome, Processo..."
-                  className="h-10 w-80 rounded-lg border border-[#333333] bg-[#1F1F1F] pl-10 pr-4 text-sm outline-none focus:border-[#FACC15] focus:ring-1 focus:ring-[#FACC15] transition-all text-white placeholder:#A3A3A3"
+                  className="h-10 w-80 rounded-lg border border-[#333333] bg-[#1F1F1F] pl-10 pr-4 text-sm outline-none focus:border-[#FACC15] focus:ring-1 focus:ring-[#FACC15] transition-all text-white placeholder:text-[#A3A3A3]"
                 />
               </div>
             </div>

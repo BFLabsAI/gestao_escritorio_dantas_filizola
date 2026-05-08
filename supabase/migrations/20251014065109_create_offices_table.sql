@@ -1,0 +1,1 @@
+CREATE TABLE IF NOT EXISTS offices_agenda_inteligente_orus (id UUID DEFAULT gen_random_uuid() PRIMARY KEY, name TEXT NOT NULL, description TEXT, ativo BOOLEAN DEFAULT true, created_by_user_id UUID, created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(), updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW());;

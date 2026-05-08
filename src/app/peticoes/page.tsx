@@ -14,6 +14,7 @@ import {
     Copy,
     X,
     Variable,
+    Upload,
 } from "lucide-react"
 import {
     TIPO_BENEFICIO_LABELS,
@@ -27,6 +28,7 @@ import {
     VARIAVEIS_DISPONIVEIS,
 } from "@/lib/services/peticoes"
 import { getPalavrasGenero } from "@/lib/utils/adaptar-genero"
+import { extrairHtmlDocx } from "@/lib/utils/extrair-docx"
 
 // Chave para tipos customizados no localStorage
 const TIPOS_BENEFICIO_CUSTOM_KEY = 'tipos_beneficio_custom'
@@ -102,6 +104,11 @@ export default function PeticoesPage() {
     const [mostrarDialogNovaVariavel, setMostrarDialogNovaVariavel] = useState(false)
     const [novaVariavelNome, setNovaVariavelNome] = useState('')
     const [novaVariavelTipo, setNovaVariavelTipo] = useState<'template' | 'genero'>('template')
+    const [extraindoDocx, setExtraindoDocx] = useState(false)
+    const fileInputRef = useRef<HTMLInputElement>(null)
+    const [isHtmlTemplate, setIsHtmlTemplate] = useState(false)
+    const [templateTextoPlano, setTemplateTextoPlano] = useState('')
+    const previewRef = useRef<HTMLDivElement>(null)
 
     const carregarModelos = async () => {
         setCarregando(true)
@@ -154,39 +161,113 @@ export default function PeticoesPage() {
     function handleIniciarEdicao(tipo: string, modelo: ModeloPeticao | null) {
         setEditando(tipo)
         setTemplateText(modelo?.conteudo_template || "")
+        setIsHtmlTemplate(modelo?.conteudo_template?.trim().startsWith('<') || false)
         setVariaveisCustomizadas((modelo?.variaveis_customizadas as string[]) || [])
         setMensagemErro("")
         setMensagemSucesso("")
     }
 
+    function htmlParaTextoPlano(html: string): string {
+        // Adiciona quebras de linha antes de cada parágrafo/bloco
+        const comQuebras = html
+            .replace(/<\/p>/gi, '\n')
+            .replace(/<br\s*\/?>/gi, '\n')
+            .replace(/<\/h[1-6]>/gi, '\n\n')
+            .replace(/<\/li>/gi, '\n')
+            .replace(/<\/tr>/gi, '\n')
+            .replace(/<\/td>/gi, '\t')
+            .replace(/<\/th>/gi, '\t')
+        // Remove todas as tags HTML restantes
+        const semTags = comQuebras.replace(/<[^>]+>/g, '')
+        // Decodifica entidades HTML
+        const div = document.createElement('div')
+        div.innerHTML = semTags
+        const texto = div.textContent || div.innerText || ''
+        // Normalizar linhas em branco duplas
+        return texto.replace(/\n{3,}/g, '\n\n').trim()
+    }
+
     function handleCancelarEdicao() {
         setEditando(null)
         setTemplateText("")
+        setTemplateTextoPlano("")
+        setIsHtmlTemplate(false)
         setVariaveisCustomizadas([])
         setNovaVariavel("")
         setShowVariavelPicker(false)
         setVariavelPickerFiltro('')
     }
 
+    async function handleUploadDocx(event: React.ChangeEvent<HTMLInputElement>) {
+        const file = event.target.files?.[0]
+        if (!file) return
+
+        if (!file.name.endsWith('.docx')) {
+            setMensagemErro("Apenas arquivos .docx são aceitos.")
+            return
+        }
+
+        setExtraindoDocx(true)
+        setMensagemErro("")
+
+        try {
+            const html = await extrairHtmlDocx(file)
+            // Armazena o HTML para o preview visual
+            setTemplateText(html)
+            // Converte para texto plano para edição — sem tags, sem imagens
+            setTemplateTextoPlano(htmlParaTextoPlano(html))
+            setIsHtmlTemplate(true)
+            setMensagemSucesso(`Arquivo "${file.name}" carregado com sucesso! Visualize o preview e edite o texto abaixo para adicionar variáveis.`)
+        } catch {
+            setMensagemErro("Erro ao ler o arquivo .docx. Verifique se o arquivo não está corrompido.")
+        } finally {
+            setExtraindoDocx(false)
+            if (fileInputRef.current) {
+                fileInputRef.current.value = ''
+            }
+        }
+    }
+
     function inserirVariavel(variavel: string) {
         const textarea = textareaRef.current
+        const tag = `{{${variavel}}}`
+
         if (!textarea) {
-            setTemplateText((prev) => prev + `{{${variavel}}}`)
+            // Sem ref: apenas appenda ao texto
+            if (isHtmlTemplate) {
+                setTemplateTextoPlano((prev) => prev + tag)
+                setIsHtmlTemplate(false)
+                setTemplateText((prev) => prev + tag)
+            } else {
+                setTemplateText((prev) => prev + tag)
+            }
             return
         }
 
         const inicio = textarea.selectionStart
         const fim = textarea.selectionEnd
-        const texto = templateText
-        const novoTexto = texto.slice(0, inicio) + `{{${variavel}}}` + texto.slice(fim)
+        // O textarea sempre exibe o texto plano (templateTextoPlano ou templateText em modo texto)
+        const textoAtual = isHtmlTemplate ? templateTextoPlano : templateText
+        const novoTexto = textoAtual.slice(0, inicio) + tag + textoAtual.slice(fim)
 
-        setTemplateText(novoTexto)
+        // Salvar posição de scroll ANTES do re-render
+        const scrollTop = textarea.scrollTop
 
-        // Restaurar foco e posicionar cursor após a variável inserida
+        if (isHtmlTemplate) {
+            // Saímos do modo HTML ao editar — o preview fica como referência
+            setTemplateTextoPlano(novoTexto)
+            setIsHtmlTemplate(false)
+            setTemplateText(novoTexto)
+        } else {
+            setTemplateText(novoTexto)
+        }
+
+        // Restaurar scroll e cursor APÓS o re-render, sem mover a página
         requestAnimationFrame(() => {
-            const pos = inicio + variavel.length + 2 // +2 pelos {{
+            const posicaoCursor = inicio + tag.length
             textarea.focus()
-            textarea.setSelectionRange(pos, pos)
+            textarea.scrollTop = scrollTop          // ← restaura scroll exato
+            textarea.setSelectionRange(posicaoCursor, posicaoCursor)
         })
     }
 
@@ -301,6 +382,7 @@ export default function PeticoesPage() {
                                 Crie o texto do template usando variáveis como {"{{nome}}"}, {"{{cpf}}"}, {"{{der}}"}.
                                 Na página do processo, o sistema substitui automaticamente essas variáveis
                                 pelos dados reais extraídos dos documentos do cliente e gera o PDF da petição.
+                                Você também pode subir um arquivo .docx existente e o sistema extrairá o texto automaticamente.
                             </p>
                         </div>
                     </div>
@@ -553,14 +635,89 @@ export default function PeticoesPage() {
                                 {/* Editor de template */}
                                 {editando === tipo && (
                                     <div className="mt-4 space-y-3">
-                                        <div className="relative">
-                                            <textarea
-                                                ref={textareaRef}
-                                                value={templateText}
-                                                onChange={(e) => setTemplateText(e.target.value)}
-                                                placeholder={`Digite o template da petição aqui...\n\nExemplo:\nAo INSS - Instituto Nacional do Seguro Social\n\nRef: Processo {{numero_processo}}\nBenefício: {{tipo_beneficio}}\n\n{{nome}}, portador do CPF {{cpf}}, nascido em {{data_nascimento}}...`}
-                                                className="w-full h-64 bg-[#0A0A0A] border border-[#333333] rounded-lg p-4 text-sm text-white font-mono resize-y focus:outline-none focus:border-[#FACC15]/50 placeholder:text-[#525252]"
+                                        {/* Upload de arquivo .docx */}
+                                        <div className="flex items-center gap-3">
+                                            <input
+                                                ref={fileInputRef}
+                                                type="file"
+                                                accept=".docx"
+                                                onChange={handleUploadDocx}
+                                                className="hidden"
+                                                id={`upload-docx-${tipo}`}
                                             />
+                                            <label
+                                                htmlFor={`upload-docx-${tipo}`}
+                                                className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-[#0A0A0A] border border-[#333333] text-[#A3A3A3] hover:border-[#FACC15]/30 hover:text-[#FACC15] transition-colors cursor-pointer text-sm font-bold"
+                                            >
+                                                {extraindoDocx ? (
+                                                    <>
+                                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                                        <span>Extraindo...</span>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <Upload className="h-4 w-4" />
+                                                        <span>Subir arquivo .docx</span>
+                                                    </>
+                                                )}
+                                            </label>
+                                            <span className="text-xs text-[#525252]">
+                                                Ou digite o template manualmente abaixo
+                                            </span>
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            {isHtmlTemplate ? (
+                                                <>
+                                                    {/* Preview visual do documento */}
+                                                    <div className="flex items-center justify-between mb-1">
+                                                        <span className="text-xs text-[#525252]">
+                                                            Preview do documento
+                                                        </span>
+                                                    </div>
+                                                    <div
+                                                        ref={previewRef}
+                                                        className="docx-preview w-full min-h-[300px] max-h-[500px] overflow-y-auto bg-white rounded-lg p-8 border border-[#333333]"
+                                                        style={{
+                                                            color: '#111111',
+                                                            fontFamily: 'Georgia, "Times New Roman", serif',
+                                                            fontSize: '14px',
+                                                            lineHeight: '1.8',
+                                                        }}
+                                                        dangerouslySetInnerHTML={{ __html: templateText }}
+                                                    />
+                                                    {/* Editor de texto plano para editar e inserir variáveis */}
+                                                    <div className="flex items-center justify-between mt-3 mb-1">
+                                                        <span className="text-xs text-[#525252]">
+                                                            Editar texto e adicionar variáveis
+                                                        </span>
+                                                    </div>
+                                                    <textarea
+                                                        ref={textareaRef}
+                                                        value={templateTextoPlano}
+                                                        onChange={(e) => {
+                                                            // Ao editar, sai do modo HTML e fica em texto puro
+                                                            setTemplateTextoPlano(e.target.value)
+                                                            setIsHtmlTemplate(false)
+                                                            setTemplateText(e.target.value)
+                                                        }}
+                                                        className="w-full h-64 bg-[#0A0A0A] border border-[#333333] rounded-lg p-4 text-sm text-white font-mono resize-y focus:outline-none focus:border-[#FACC15]/50 placeholder:text-[#525252]"
+                                                        placeholder="Edite o texto ou adicione variáveis como {{nome}}, {{cpf}}..."
+                                                    />
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <div className="relative">
+                                                        <textarea
+                                                            ref={textareaRef}
+                                                            value={templateText}
+                                                            onChange={(e) => setTemplateText(e.target.value)}
+                                                            placeholder={`Digite o template da petição aqui...\n\nExemplo:\nAo INSS - Instituto Nacional do Seguro Social\n\nRef: Processo {{numero_processo}}\nBenefício: {{tipo_beneficio}}\n\n{{nome}}, portador do CPF {{cpf}}, nascido em {{data_nascimento}}...`}
+                                                            className="w-full h-64 bg-[#0A0A0A] border border-[#333333] rounded-lg p-4 text-sm text-white font-mono resize-y focus:outline-none focus:border-[#FACC15]/50 placeholder:text-[#525252]"
+                                                        />
+                                                    </div>
+                                                </>
+                                            )}
                                         </div>
 
                                         {/* Botão Variável - abre o picker */}

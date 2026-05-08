@@ -1,0 +1,5 @@
+ALTER TABLE campaign_messages_disparalead 
+ADD COLUMN IF NOT EXISTS message_content TEXT,
+ADD COLUMN IF NOT EXISTS sequence_order INTEGER DEFAULT 1,
+ADD COLUMN IF NOT EXISTS message_type TEXT DEFAULT 'text',
+ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();;

@@ -132,8 +132,8 @@ export interface ModeloPeticao {
     tipo_beneficio: TipoBeneficio | null
     nome_arquivo: string
     nome_original: string
-    storage_path: string
-    public_url: string
+    storage_path: string | null
+    public_url: string | null
     mime_type: string | null
     conteudo_template: string | null
     ativo: boolean

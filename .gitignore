@@ -39,3 +39,4 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+supabase/migrations/20251028152526_update_dispara_lead_production_config_with_real_values.sql

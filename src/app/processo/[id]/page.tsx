@@ -440,7 +440,7 @@ export default function ProcessoAuditPage({ params }: { params: Promise<{ id: st
             setChecklist(getChecklistFromData(exigenciasData, documentosBase, dadosResult.dados ?? {}))
             setModeloPeticao(modeloResult.modelo)
             setPeticoesGeradas(peticoesResult.peticoes ?? [])
-            setDadosExtraidos(dadosResult.dados ?? [])
+            setDadosExtraidos(dadosResult.dados ?? {})
         } catch (err) {
             console.error('[carregarProcesso] Erro:', err)
             setErro(err instanceof Error ? err.message : 'Erro ao carregar processo.')

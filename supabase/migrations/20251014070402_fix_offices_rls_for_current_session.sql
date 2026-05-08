@@ -1,0 +1,1 @@
+DROP POLICY IF EXISTS "Users can manage offices" ON offices_agenda_inteligente_orus; CREATE POLICY "Enable all operations for authenticated users" ON offices_agenda_inteligente_orus FOR ALL USING (true) WITH CHECK (true);;

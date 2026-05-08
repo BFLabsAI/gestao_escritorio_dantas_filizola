@@ -111,3 +111,44 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Estilos para o preview de documentos DOCX (gerados pelo mammoth) */
+.docx-preview p {
+  margin: 0.6em 0;
+  color: #111111;
+}
+.docx-preview strong, .docx-preview b {
+  font-weight: 700;
+}
+.docx-preview em, .docx-preview i {
+  font-style: italic;
+}
+.docx-preview u {
+  text-decoration: underline;
+}
+.docx-preview table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 1em 0;
+}
+.docx-preview td, .docx-preview th {
+  border: 1px solid #cccccc;
+  padding: 6px 10px;
+  color: #111111;
+}
+.docx-preview h1, .docx-preview h2, .docx-preview h3, .docx-preview h4 {
+  font-weight: 700;
+  margin: 1em 0 0.4em;
+  color: #111111;
+}
+.docx-preview h1 { font-size: 1.5em; }
+.docx-preview h2 { font-size: 1.3em; }
+.docx-preview h3 { font-size: 1.1em; }
+.docx-preview ul, .docx-preview ol {
+  padding-left: 1.5em;
+  margin: 0.5em 0;
+}
+.docx-preview li {
+  margin: 0.2em 0;
+  color: #111111;
+}
